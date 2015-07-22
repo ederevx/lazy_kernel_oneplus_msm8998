@@ -198,24 +198,6 @@ static bool can_stop_full_tick(void)
 		return false;
 	}
 
-	/* sched_clock_tick() needs us? */
-#ifdef CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
-	/*
-	 * TODO: kick full dynticks CPUs when
-	 * sched_clock_stable is set.
-	 */
-	if (!sched_clock_stable()) {
-		trace_tick_stop(0, "unstable sched clock\n");
-		/*
-		 * Don't allow the user to think they can get
-		 * full NO_HZ with this machine.
-		 */
-		WARN_ONCE(tick_nohz_full_running,
-			  "NO_HZ FULL will not work with unstable sched clock");
-		return false;
-	}
-#endif
-
 	return true;
 }
 
