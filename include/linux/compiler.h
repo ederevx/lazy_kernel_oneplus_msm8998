@@ -572,10 +572,14 @@ unsigned long read_word_at_a_time(const void *addr)
  * Similar to rcu_dereference(), but for situations where the pointed-to
  * object's lifetime is managed by something other than RCU.  That
  * "something other" might be reference counting or simple immortality.
+ *
+ * The seemingly unused void * variable is to validate @p is indeed a pointer
+ * type. All pointer types silently cast to void *.
  */
 #define lockless_dereference(p) \
 ({ \
 	typeof(p) _________p1 = READ_ONCE(p); \
+	__maybe_unused const void * const _________p2 = _________p1; \
 	smp_read_barrier_depends(); /* Dependency order vs. p above. */ \
 	(_________p1); \
 })
