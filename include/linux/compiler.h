@@ -573,13 +573,14 @@ unsigned long read_word_at_a_time(const void *addr)
  * object's lifetime is managed by something other than RCU.  That
  * "something other" might be reference counting or simple immortality.
  *
- * The seemingly unused size_t variable is to validate @p is indeed a pointer
- * type by making sure it can be dereferenced.
+ * The seemingly unused variable ___typecheck_p validates that @p is
+ * indeed a pointer type by using a pointer to typeof(*p) as the type.
+ * Taking a pointer to typeof(*p) again is needed in case p is void *.
  */
 #define lockless_dereference(p) \
 ({ \
 	typeof(p) _________p1 = READ_ONCE(p); \
-	size_t __maybe_unused __size_of_ptr = sizeof(*(p)); \
+	typeof(*(p)) *___typecheck_p __maybe_unused; \
 	smp_read_barrier_depends(); /* Dependency order vs. p above. */ \
 	(_________p1); \
 })
