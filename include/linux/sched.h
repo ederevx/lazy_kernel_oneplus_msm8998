@@ -2546,6 +2546,10 @@ extern void sched_clock_init(void);
 extern int sched_clock_initialized(void);
 
 #ifndef CONFIG_HAVE_UNSTABLE_SCHED_CLOCK
+static inline void sched_clock_init_late(void)
+{
+}
+
 static inline void sched_clock_tick(void)
 {
 }
@@ -2568,6 +2572,7 @@ static inline u64 local_clock(void)
 	return sched_clock();
 }
 #else
+extern void sched_clock_init_late(void);
 /*
  * Architectures can set this to 1 if they have specified
  * CONFIG_HAVE_UNSTABLE_SCHED_CLOCK in their arch Kconfig,
