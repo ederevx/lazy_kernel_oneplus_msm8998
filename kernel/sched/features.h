@@ -64,6 +64,11 @@
  */
 #define SCHED_FEAT_WARN_DOUBLE_CLOCK 0
 
+/*
+ * When doing wakeups, attempt to limit superfluous scans of the LLC domain.
+ */
+#define SCHED_FEAT_SIS_AVG_CPU 0
+
 #ifdef HAVE_RT_PUSH_IPI
 /*
  * In order to avoid a thundering herd attack of CPUs that are
