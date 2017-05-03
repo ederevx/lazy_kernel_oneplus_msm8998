@@ -42,7 +42,7 @@
 #define __smp_rmb()	dmb(ishld)
 #define __smp_wmb()	dmb(ishst)
 
-#define __smp_store_release(p, v)						\
+#define __smp_store_release(p, v)					\
 do {									\
 	union { typeof(*p) __val; char __c[1]; } __u =			\
 		{ .__val = (__force typeof(*p)) (v) }; 			\
