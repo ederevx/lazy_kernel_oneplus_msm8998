@@ -113,3 +113,5 @@
  * restrictions.
  */
 #define SCHED_FEAT_MIN_CAPACITY_CAPPING 0
+
+#define SCHED_FEAT_WA_IDLE 1
