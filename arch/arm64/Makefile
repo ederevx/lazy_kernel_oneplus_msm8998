@@ -34,9 +34,6 @@ $(warning LSE atomics not supported by binutils)
   endif
 endif
 
-KBUILD_CFLAGS	+= $(call cc-option,-march=armv8-a+crypto+crc,) $(call cc-option,-mcpu=cortex-a53+crypto+crc,)
-KBUILD_AFLAGS += $(call cc-option,-march=armv8-a+crypto+crc,) $(call cc-option,-mcpu=cortex-a53+crypto+crc,)
-
 ifeq ($(CONFIG_COMPAT_VDSO), y)
   CROSS_COMPILE_ARM32 ?= $(CONFIG_CROSS_COMPILE_ARM32:"%"=%)
 
@@ -106,6 +103,13 @@ AS		+= -EL
 LD		+= -EL
 LDFLAGS		+= -maarch64linux
 endif
+
+# msm8998 optimizations
+arch-$(CONFIG_ARCH_MSM8998)	:= $(call cc-option,-march=armv8-a+crc+crypto -mcpu=cortex-a73.cortex-a53+crc+crypto)
+tune-$(CONFIG_ARCH_MSM8998)	:= -mtune=cortex-a73.cortex-a53
+
+KBUILD_CFLAGS	+= $(arch-y) $(tune-y)
+KBUILD_AFLAGS	+= $(arch-y) $(tune-y)
 
 CHECKFLAGS	+= -D__aarch64__
 
