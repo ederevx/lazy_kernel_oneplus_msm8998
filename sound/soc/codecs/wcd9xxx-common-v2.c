@@ -481,7 +481,7 @@ static inline void wcd_clsh_force_iq_ctl(struct snd_soc_codec *codec,
 	if (!IS_CODEC_TYPE(wcd9xxx, WCD934X))
 		return;
 
-	if (mode == CLS_H_LOHIFI || mode == CLS_AB) {
+	if (mode == CLS_H_LOHIFI) {
 		snd_soc_update_bits(codec, WCD9XXX_HPH_NEW_INT_PA_MISC2,
 				    0x20, 0x20);
 		snd_soc_update_bits(codec, WCD9XXX_RX_BIAS_HPH_LOWPOWER,
@@ -583,7 +583,9 @@ static void wcd_clsh_set_gain_path(struct snd_soc_codec *codec,
 	case CLS_AB:
 		val = 0x00;
 		break;
+	case CLS_H_LOHIFI:
 	case CLS_H_HIFI:
+	case CLS_AB_HIFI:
 		val = 0x02;
 		break;
 	case CLS_H_LP:
@@ -608,39 +610,23 @@ static void wcd_clsh_set_hph_mode(struct snd_soc_codec *codec,
 
 	switch (mode) {
 	case CLS_H_NORMAL:
-		res_val = VREF_FILT_R_50KOHM;
-		val = 0x00;
-		gain = DAC_GAIN_0DB;
-		ipeak = DELTA_I_50MA;
-		break;
 	case CLS_AB:
 		val = 0x00;
-		gain = DAC_GAIN_0DB;
-		ipeak = DELTA_I_50MA;
-		break;
-	case CLS_AB_HIFI:
-		val = 0x08;
-		break;
-	case CLS_H_HIFI:
-		val = 0x08;
-		gain = DAC_GAIN_M0P2DB;
+		gain = DAC_GAIN_0P8DB;
 		ipeak = DELTA_I_50MA;
 		break;
 	case CLS_H_LOHIFI:
-		val = 0x00;
-		if ((IS_CODEC_TYPE(wcd9xxx, WCD9335)) ||
-		    (IS_CODEC_TYPE(wcd9xxx, WCD9326))) {
-			val = 0x08;
-			gain = DAC_GAIN_M0P2DB;
-			ipeak = DELTA_I_50MA;
-		}
+	case CLS_H_HIFI:
+	case CLS_AB_HIFI:
+		val = 0x08;
+		gain = DAC_GAIN_0P8DB;
+		ipeak = DELTA_I_50MA;
 		break;
 	case CLS_H_ULP:
 		val = 0x0C;
 		break;
 	case CLS_H_LP:
 		val = 0x04;
-		ipeak = DELTA_I_30MA;
 		break;
 	default:
 		return;
@@ -648,10 +634,10 @@ static void wcd_clsh_set_hph_mode(struct snd_soc_codec *codec,
 
 	/*
 	 * For tavil set mode to Lower_power for
-	 * CLS_H_LOHIFI and CLS_AB
+	 * CLS_H_LOHIFI
 	 */
 	if ((IS_CODEC_TYPE(wcd9xxx, WCD934X)) &&
-	    (mode == CLS_H_LOHIFI || mode == CLS_AB))
+	    (mode == CLS_H_LOHIFI))
 		val = 0x04;
 
 	snd_soc_update_bits(codec, WCD9XXX_A_ANA_HPH, 0x0C, val);

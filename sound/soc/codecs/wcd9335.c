@@ -4111,15 +4111,12 @@ static void tasha_codec_override(struct snd_soc_codec *codec,
 				 int mode,
 				 int event)
 {
-	if (mode == CLS_AB) {
+	if (mode == CLS_AB || mode == CLS_AB_HIFI) {
 		switch (event) {
+		case SND_SOC_DAPM_PRE_PMU:
 		case SND_SOC_DAPM_POST_PMU:
-			if (!(snd_soc_read(codec,
-					WCD9335_CDC_RX2_RX_PATH_CTL) & 0x10) &&
-				(!(snd_soc_read(codec,
-					WCD9335_CDC_RX1_RX_PATH_CTL) & 0x10)))
-				snd_soc_update_bits(codec,
-					WCD9XXX_A_ANA_RX_SUPPLIES, 0x02, 0x02);
+			snd_soc_update_bits(codec,
+				WCD9XXX_A_ANA_RX_SUPPLIES, 0x02, 0x02);
 		break;
 		case SND_SOC_DAPM_POST_PMD:
 			snd_soc_update_bits(codec,
@@ -8558,7 +8555,7 @@ static int tasha_codec_vbat_enable_event(struct snd_soc_dapm_widget *w,
 }
 
 static const char * const rx_hph_mode_mux_text[] = {
-	"CLS_H_INVALID", "CLS_H_HIFI", "CLS_H_LP", "CLS_AB", "CLS_H_LOHIFI"
+	"CLS_H_LP", "CLS_H_LOHIFI", "CLS_H_HIFI", "CLS_AB", "CLS_AB_HIFI"
 };
 
 static const struct soc_enum rx_hph_mode_mux_enum =
