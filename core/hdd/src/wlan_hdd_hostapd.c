@@ -87,6 +87,7 @@
 #include <wlan_cfg80211_mc_cp_stats.h>
 #include <wlan_cp_stats_mc_ucfg_api.h>
 #include "wlan_action_oui_ucfg_api.h"
+#include "ftm_time_sync_ucfg_api.h"
 
 #define    IS_UP(_dev) \
 	(((_dev)->flags & (IFF_RUNNING|IFF_UP)) == (IFF_RUNNING|IFF_UP))
@@ -1559,11 +1560,25 @@ static void hdd_fill_station_info(struct hdd_adapter *adapter,
 		i = oldest_disassoc_sta_idx;
 	}
 	if (i < WLAN_MAX_STA_COUNT) {
+		if (adapter->cache_sta_info[i].assoc_req_ies.data) {
+			qdf_mem_free(
+				adapter->cache_sta_info[i].assoc_req_ies.data);
+			adapter->cache_sta_info[i].assoc_req_ies.data = NULL;
+			adapter->cache_sta_info[i].assoc_req_ies.len = 0;
+		}
 		qdf_mem_zero(&adapter->cache_sta_info[i],
 			     sizeof(*stainfo));
 		qdf_mem_copy(&adapter->cache_sta_info[i],
 				     stainfo, sizeof(struct hdd_station_info));
-
+		adapter->cache_sta_info[i].assoc_req_ies.data =
+				qdf_mem_malloc(event->ies_len);
+		if (adapter->cache_sta_info[i].assoc_req_ies.data) {
+			qdf_mem_copy(
+				adapter->cache_sta_info[i].assoc_req_ies.data,
+				event->ies, event->ies_len);
+			adapter->cache_sta_info[i].assoc_req_ies.len =
+				event->ies_len;
+		}
 	} else {
 		hdd_debug("reached max staid, stainfo can't be cached");
 	}
@@ -2231,32 +2246,28 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 					      HDD_SAP_WAKE_LOCK_DURATION);
 		{
 			struct station_info *sta_info;
-			uint16_t iesLen = event->iesLen;
+			uint32_t ies_len = event->ies_len;
 
 			sta_info = qdf_mem_malloc(sizeof(*sta_info));
 			if (!sta_info) {
 				hdd_err("Failed to allocate station info");
 				return QDF_STATUS_E_FAILURE;
 			}
-			if (iesLen <= MAX_ASSOC_IND_IE_LEN) {
-				sta_info->assoc_req_ies =
-					(const u8 *)&event->ies[0];
-				sta_info->assoc_req_ies_len = iesLen;
+
+			sta_info->assoc_req_ies = event->ies;
+			sta_info->assoc_req_ies_len = ies_len;
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 0, 0)) && !defined(WITH_BACKPORTS)
-				/*
-				 * After Kernel 4.0, it's no longer need to set
-				 * STATION_INFO_ASSOC_REQ_IES flag, as it
-				 * changed to use assoc_req_ies_len length to
-				 * check the existence of request IE.
-				 */
-				sta_info->filled |= STATION_INFO_ASSOC_REQ_IES;
+			/*
+			 * After Kernel 4.0, it's no longer need to set
+			 * STATION_INFO_ASSOC_REQ_IES flag, as it
+			 * changed to use assoc_req_ies_len length to
+			 * check the existence of request IE.
+			 */
+			sta_info->filled |= STATION_INFO_ASSOC_REQ_IES;
 #endif
-				cfg80211_new_sta(dev,
-					(const u8 *)&event->staMac.bytes[0],
-					sta_info, GFP_KERNEL);
-			} else {
-				hdd_err("Assoc Ie length is too long");
-			}
+			cfg80211_new_sta(dev,
+				(const u8 *)&event->staMac.bytes[0],
+				sta_info, GFP_KERNEL);
 			qdf_mem_free(sta_info);
 		}
 
@@ -2301,6 +2312,11 @@ QDF_STATUS hdd_hostapd_sap_event_cb(tpSap_Event pSapEvent,
 			cache_stainfo->rx_rate = disassoc_comp->rx_rate;
 			cache_stainfo->reason_code = disassoc_comp->reason_code;
 			cache_stainfo->disassoc_ts = qdf_system_ticks();
+			hdd_debug("Cache_stainfo rssi %d txrate %d rxrate %d reason_code %d",
+				  cache_stainfo->rssi,
+				  cache_stainfo->tx_rate,
+				  cache_stainfo->rx_rate,
+				  cache_stainfo->reason_code);
 		}
 		hdd_nofl_info("SAP disassociated " MAC_ADDRESS_STR,
 			      MAC_ADDR_ARRAY(wrqu.addr.sa_data));
@@ -3068,6 +3084,8 @@ QDF_STATUS wlan_hdd_get_channel_for_sap_restart(
 	struct ch_params ch_params;
 	struct hdd_adapter *ap_adapter = wlan_hdd_get_adapter_from_vdev(
 					psoc, vdev_id);
+	struct sap_context *sap_context;
+
 	if (!ap_adapter) {
 		hdd_err("ap_adapter is NULL");
 		return QDF_STATUS_E_FAILURE;
@@ -3086,7 +3104,7 @@ QDF_STATUS wlan_hdd_get_channel_for_sap_restart(
 		return QDF_STATUS_E_FAILURE;
 	}
 
-	if (NULL == channel || NULL == sec_ch) {
+	if (!channel || !sec_ch) {
 		hdd_err("Null parameters");
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -3102,6 +3120,15 @@ QDF_STATUS wlan_hdd_get_channel_for_sap_restart(
 	mac_handle = hdd_ctx->mac_handle;
 	if (!mac_handle) {
 		hdd_err("mac_handle is NULL");
+		return QDF_STATUS_E_FAILURE;
+	}
+	sap_context = hdd_ap_ctx->sap_context;
+	if (!sap_context) {
+		hdd_err("sap_context is null");
+		return QDF_STATUS_E_FAILURE;
+	}
+	if (QDF_IS_STATUS_ERROR(wlansap_context_get(sap_context))) {
+		hdd_err("sap_context is invalid");
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -3124,8 +3151,8 @@ QDF_STATUS wlan_hdd_get_channel_for_sap_restart(
 	 * supported, return from here if DBS is not supported.
 	 * Need to take care of 3 port cases with 2 STA iface in future.
 	 */
-	intf_ch = wlansap_check_cc_intf(hdd_ap_ctx->sap_context);
-	hdd_debug("intf_ch: %d", intf_ch);
+	intf_ch = wlansap_check_cc_intf(sap_context);
+	hdd_info("intf_ch: %d", intf_ch);
 	if (QDF_MCC_TO_SCC_SWITCH_FORCE_PREFERRED_WITHOUT_DISCONNECTION !=
 		hdd_ctx->config->WlanMccToSccSwitchMode) {
 		if (QDF_IS_STATUS_ERROR(
@@ -3136,12 +3163,21 @@ QDF_STATUS wlan_hdd_get_channel_for_sap_restart(
 					hdd_ctx->psoc, PM_SAP_MODE)))) {
 			hdd_debug("can't move sap to %d",
 				hdd_sta_ctx->conn_info.operationChannel);
+			wlansap_context_put(sap_context);
 			return QDF_STATUS_E_FAILURE;
 		}
 	}
 
 sap_restart:
-	if (intf_ch == 0) {
+	if (!intf_ch) {
+		intf_ch = wlansap_get_chan_band_restrict(hdd_ap_ctx->sap_context);
+		if (intf_ch == hdd_ap_ctx->sap_context->channel)
+			intf_ch = 0;
+	} else if (hdd_ap_ctx->sap_context)
+		hdd_ap_ctx->sap_context->csa_reason =
+				CSA_REASON_CONCURRENT_STA_CHANGED_CHANNEL;
+	if (!intf_ch) {
+		wlansap_context_put(sap_context);
 		hdd_debug("interface channel is 0");
 		return QDF_STATUS_E_FAILURE;
 	}
@@ -3150,9 +3186,6 @@ sap_restart:
 		  hdd_ap_ctx->sap_config.channel, intf_ch);
 	ch_params.ch_width = CH_WIDTH_MAX;
 	hdd_ap_ctx->bss_stop_reason = BSS_STOP_DUE_TO_MCC_SCC_SWITCH;
-	if (hdd_ap_ctx->sap_context)
-		hdd_ap_ctx->sap_context->csa_reason =
-			CSA_REASON_CONCURRENT_STA_CHANGED_CHANNEL;
 
 	wlan_reg_set_channel_params(hdd_ctx->pdev,
 				    intf_ch,
@@ -3167,6 +3200,7 @@ sap_restart:
 	hdd_sap_restart_chan_switch_cb(psoc, vdev_id,
 		intf_ch,
 		ch_params.ch_width, false);
+	wlansap_context_put(sap_context);
 
 	return QDF_STATUS_SUCCESS;
 }
@@ -7846,7 +7880,7 @@ int wlan_hdd_cfg80211_start_bss(struct hdd_adapter *adapter,
 	struct hdd_hostapd_state *hostapd_state;
 	mac_handle_t mac_handle;
 	int32_t i;
-	struct hdd_config *iniConfig;
+	struct hdd_config *iniConfig = NULL;
 	struct hdd_context *hdd_ctx = WLAN_HDD_GET_CTX(adapter);
 	tSmeConfigParams *sme_config;
 	bool MFPCapable = false;
@@ -7888,17 +7922,7 @@ int wlan_hdd_cfg80211_start_bss(struct hdd_adapter *adapter,
 	 */
 	hdd_abort_ongoing_sta_connection(hdd_ctx);
 
-	/*
-	 * Reject start bss if reassoc in progress on any adapter.
-	 * sme_is_any_session_in_middle_of_roaming is for LFR2 and
-	 * hdd_is_roaming_in_progress is for LFR3
-	 */
 	mac_handle = hdd_ctx->mac_handle;
-	if (sme_is_any_session_in_middle_of_roaming(mac_handle) ||
-	    hdd_is_roaming_in_progress(hdd_ctx)) {
-		hdd_info("Reassociation in progress");
-		return -EINVAL;
-	}
 
 	/* Disable Roaming on all adapters before starting bss */
 	wlan_hdd_disable_roaming(adapter);
@@ -8517,6 +8541,9 @@ int wlan_hdd_cfg80211_start_bss(struct hdd_adapter *adapter,
 	/* Check and restart SAP if it is on unsafe channel */
 	hdd_unsafe_channel_restart_sap(hdd_ctx);
 
+	ucfg_ftm_time_sync_update_bss_state(adapter->vdev,
+					    FTM_TIME_SYNC_BSS_STARTED);
+
 	hdd_set_connection_in_progress(false);
 
 	ret = 0;
@@ -8535,8 +8562,14 @@ error:
 	wlansap_reset_sap_config_add_ie(pConfig, eUPDATE_IE_ALL);
 
 free:
-	/* Enable Roaming after start bss in case of failure/success */
-	wlan_hdd_enable_roaming(adapter);
+	if (iniConfig && (iniConfig->sta_disable_roam &
+	    LFR3_STA_ROAM_DISABLE_BY_P2P) && (adapter->device_mode ==
+	    QDF_P2P_GO_MODE)) {
+		hdd_debug("p2p go mode, keep disable roam");
+	} else {
+		/* Enable Roaming after start bss in case of failure/success */
+		wlan_hdd_enable_roaming(adapter);
+	}
 	qdf_mem_free(sme_config);
 	return ret;
 }
@@ -8703,6 +8736,13 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 		hdd_green_ap_start_state_mc(hdd_ctx, adapter->device_mode,
 					    false);
 
+		if ((hdd_ctx->config->sta_disable_roam &
+		    LFR3_STA_ROAM_DISABLE_BY_P2P) && (adapter->device_mode ==
+		    QDF_P2P_GO_MODE)) {
+			hdd_debug("p2p go disconnected enable roam");
+			wlan_hdd_enable_roaming(adapter);
+		}
+
 		if (adapter->session.ap.beacon) {
 			qdf_mem_free(adapter->session.ap.beacon);
 			adapter->session.ap.beacon = NULL;
@@ -8746,6 +8786,8 @@ static int __wlan_hdd_cfg80211_stop_ap(struct wiphy *wiphy,
 	hdd_destroy_acs_timer(adapter);
 
 	ucfg_p2p_status_stop_bss(adapter->vdev);
+	ucfg_ftm_time_sync_update_bss_state(adapter->vdev,
+					    FTM_TIME_SYNC_BSS_STOPPED);
 
 	hdd_exit();
 

@@ -38,29 +38,38 @@
 /* timeout in msec to wait for mon thread to suspend */
 #define PKT_CAPTURE_SUSPEND_TIMEOUT 200
 
-typedef void (*pkt_capture_mon_thread_cb)(void *context, void *monpkt,
-					  uint8_t vdev_id, uint8_t tid,
-					  uint8_t status, bool pkt_format);
+typedef void (*pkt_capture_mon_thread_cb)(
+			void *context, void *ppdev, void *monpkt,
+			uint8_t vdev_id, uint8_t tid,
+			uint8_t status, bool pkt_format,
+			uint8_t *bssid,
+			uint8_t tx_retry_cnt);
 
 /*
  * struct pkt_capture_mon_pkt - mon packet wrapper for mon data from TXRX
  * @list: List for storing mon packets
  * @context: Callback context
+ * @pdev: pointer to pdev handle
  * @monpkt: Mon skb
  * @vdev_id: Vdev id to which this packet is destined
  * @tid: Tid of mon packet
  * @status: Tx packet status
  * @pkt_format: Mon packet format, 0 = 802.3 format , 1 = 802.11 format
+ * @bssid: bssid
+ * @tx_retry_cnt: tx retry count
  * @callback: Mon callback
  */
 struct pkt_capture_mon_pkt {
 	struct list_head list;
 	void *context;
+	void *pdev;
 	void *monpkt;
 	uint8_t vdev_id;
 	uint8_t tid;
 	uint8_t status;
 	bool pkt_format;
+	uint8_t bssid[QDF_MAC_ADDR_SIZE];
+	uint8_t tx_retry_cnt;
 	pkt_capture_mon_thread_cb callback;
 };
 
@@ -101,6 +110,20 @@ struct pkt_capture_mon_context {
 	struct list_head mon_pkt_freeq;
 	bool is_mon_thread_suspended;
 };
+
+/**
+ * struct radiotap_header - base radiotap header
+ * @it_version: radiotap version, always 0
+ * @it_pad: padding (or alignment)
+ * @it_len: overall radiotap header length
+ * @it_present: (first) present word
+ */
+struct radiotap_header {
+	uint8_t it_version;
+	uint8_t it_pad;
+	__le16 it_len;
+	__le32 it_present;
+} __packed;
 
 /**
  * pkt_capture_suspend_mon_thread() - suspend packet capture mon thread

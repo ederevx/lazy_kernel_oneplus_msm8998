@@ -48,6 +48,7 @@
 #include "wlan_p2p_ucfg_api.h"
 #include "wlan_cfg80211_p2p.h"
 #include "wlan_hdd_object_manager.h"
+#include "wlan_pkt_capture_ucfg_api.h"
 
 /* Ms to Time Unit Micro Sec */
 #define MS_TO_TU_MUS(x)   ((x) * 1024)
@@ -680,13 +681,17 @@ struct wireless_dev *__wlan_hdd_add_virtual_intf(struct wiphy *wiphy,
 	}
 
 	adapter = NULL;
-	ret = wlan_hdd_add_monitor_check(hdd_ctx, &adapter, type, name,
-					 true, name_assign_type);
-	if (ret)
-		return ERR_PTR(-EINVAL);
-	if (adapter) {
-		hdd_exit();
-		return adapter->dev->ieee80211_ptr;
+	if ((ucfg_pkt_capture_get_mode(hdd_ctx->psoc)) &&
+	    (type == NL80211_IFTYPE_MONITOR)) {
+		ret = wlan_hdd_add_monitor_check(hdd_ctx, &adapter, name,
+						 true, name_assign_type);
+		if (ret)
+			return ERR_PTR(-EINVAL);
+
+		if (adapter) {
+			hdd_exit();
+			return adapter->dev->ieee80211_ptr;
+		}
 	}
 
 	if (session_type == QDF_SAP_MODE) {
@@ -1334,6 +1339,8 @@ int wlan_hdd_set_mcc_p2p_quota(struct hdd_adapter *adapter,
 	int32_t ret = 0;
 	uint32_t concurrent_state;
 	struct hdd_context *hdd_ctx;
+	uint32_t sta_cli_bit_mask = QDF_STA_MASK | QDF_P2P_CLIENT_MASK;
+	uint32_t sta_go_bit_mask = QDF_STA_MASK | QDF_P2P_GO_MASK;
 
 	if (!adapter) {
 		hdd_err("Invalid adapter");
@@ -1351,9 +1358,8 @@ int wlan_hdd_set_mcc_p2p_quota(struct hdd_adapter *adapter,
 	 * Check if concurrency mode is active.
 	 * Need to modify this code to support MCC modes other than STA/P2P
 	 */
-	if ((concurrent_state ==
-	     (QDF_STA_MASK | QDF_P2P_CLIENT_MASK)) ||
-	    (concurrent_state == (QDF_STA_MASK | QDF_P2P_GO_MASK))) {
+	if (((concurrent_state & sta_cli_bit_mask) == sta_cli_bit_mask) ||
+	    ((concurrent_state & sta_go_bit_mask) == sta_go_bit_mask)) {
 		hdd_info("STA & P2P are both enabled");
 
 		/*
@@ -1369,7 +1375,6 @@ int wlan_hdd_set_mcc_p2p_quota(struct hdd_adapter *adapter,
 
 		set_value = set_first_connection_operating_channel(
 			hdd_ctx, set_value, adapter->device_mode);
-
 
 		set_value = set_second_connection_operating_channel(
 			hdd_ctx, set_value, adapter->session_id);
@@ -1393,6 +1398,8 @@ void wlan_hdd_set_mcc_latency(struct hdd_adapter *adapter, int set_value)
 {
 	uint32_t concurrent_state;
 	struct hdd_context *hdd_ctx;
+	uint32_t sta_cli_bit_mask = QDF_STA_MASK | QDF_P2P_CLIENT_MASK;
+	uint32_t sta_go_bit_mask = QDF_STA_MASK | QDF_P2P_GO_MASK;
 
 	if (!adapter) {
 		hdd_err("Invalid adapter");
@@ -1411,9 +1418,8 @@ void wlan_hdd_set_mcc_latency(struct hdd_adapter *adapter, int set_value)
 	 * Check if concurrency mode is active.
 	 * Need to modify this code to support MCC modes other than STA/P2P
 	 */
-	if ((concurrent_state ==
-	     (QDF_STA_MASK | QDF_P2P_CLIENT_MASK)) ||
-	    (concurrent_state == (QDF_STA_MASK | QDF_P2P_GO_MASK))) {
+	if (((concurrent_state & sta_cli_bit_mask) == sta_cli_bit_mask) ||
+	    ((concurrent_state & sta_go_bit_mask) == sta_go_bit_mask)) {
 		hdd_info("STA & P2P are both enabled");
 		/*
 		 * The channel number and latency are formatted in

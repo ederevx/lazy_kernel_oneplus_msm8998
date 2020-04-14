@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2018, 2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -1030,14 +1030,12 @@ QDF_STATUS sap_channel_sel(struct sap_context *sap_context)
 	struct scan_start_request *req;
 	struct wlan_objmgr_vdev *vdev = NULL;
 	uint8_t i;
-	uint8_t pdev_id;
 	uint8_t *channel_list = NULL;
 	uint8_t num_of_channels = 0;
 	tHalHandle h_hal;
 	uint8_t con_ch;
 	uint8_t vdev_id;
 	uint32_t scan_id;
-	uint8_t *self_mac;
 
 	h_hal = cds_get_context(QDF_MODULE_ID_SME);
 	if (!h_hal) {
@@ -1111,12 +1109,10 @@ QDF_STATUS sap_channel_sel(struct sap_context *sap_context)
 		return QDF_STATUS_E_NOMEM;
 	}
 
-	pdev_id = wlan_objmgr_pdev_get_pdev_id(mac_ctx->pdev);
-	self_mac = sap_context->self_mac_addr;
-	vdev = wlan_objmgr_get_vdev_by_macaddr_from_psoc(mac_ctx->psoc,
-							 pdev_id,
-							 self_mac,
-							 WLAN_LEGACY_SME_ID);
+	vdev_id = sap_context->sessionId;
+	vdev = wlan_objmgr_get_vdev_by_id_from_psoc(mac_ctx->psoc,
+						    vdev_id,
+						    WLAN_LEGACY_SME_ID);
 	if (!vdev) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
 			  FL("Invalid vdev objmgr"));
@@ -1129,7 +1125,6 @@ QDF_STATUS sap_channel_sel(struct sap_context *sap_context)
 	ucfg_scan_init_default_params(vdev, req);
 	scan_id = ucfg_scan_get_scan_id(mac_ctx->psoc);
 	req->scan_req.scan_id = scan_id;
-	vdev_id = wlan_vdev_get_id(vdev);
 	req->scan_req.vdev_id = vdev_id;
 	req->scan_req.scan_f_passive = false;
 	req->scan_req.scan_req_id = sap_context->req_id;
@@ -1552,27 +1547,19 @@ QDF_STATUS sap_signal_hdd_event(struct sap_context *sap_ctx,
 				 &csr_roaminfo->peerMac);
 		reassoc_complete->staId = csr_roaminfo->staId;
 		reassoc_complete->statusCode = csr_roaminfo->statusCode;
-		reassoc_complete->iesLen = csr_roaminfo->rsnIELen;
-		qdf_mem_copy(reassoc_complete->ies, csr_roaminfo->prsnIE,
-			     csr_roaminfo->rsnIELen);
 
-#ifdef FEATURE_WLAN_WAPI
-		if (csr_roaminfo->wapiIELen) {
-			uint8_t len = reassoc_complete->iesLen;
-
-			reassoc_complete->iesLen += csr_roaminfo->wapiIELen;
-			qdf_mem_copy(&reassoc_complete->ies[len],
-				     csr_roaminfo->pwapiIE,
-				     csr_roaminfo->wapiIELen);
+		if (csr_roaminfo->assocReqLength < ASSOC_REQ_IE_OFFSET) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+				  FL("Invalid assoc request length:%d"),
+				  csr_roaminfo->assocReqLength);
+			return QDF_STATUS_E_INVAL;
 		}
-#endif
-		if (csr_roaminfo->addIELen) {
-			uint8_t len = reassoc_complete->iesLen;
+		reassoc_complete->ies_len = (csr_roaminfo->assocReqLength -
+					    ASSOC_REQ_IE_OFFSET);
+		reassoc_complete->ies = (csr_roaminfo->assocReqPtr +
+					 ASSOC_REQ_IE_OFFSET);
 
-			reassoc_complete->iesLen += csr_roaminfo->addIELen;
-			qdf_mem_copy(&reassoc_complete->ies[len],
-				     csr_roaminfo->paddIE,
-				     csr_roaminfo->addIELen);
+		if (csr_roaminfo->addIELen) {
 			if (wlan_get_vendor_ie_ptr_from_oui(
 			    SIR_MAC_P2P_OUI, SIR_MAC_P2P_OUI_SIZE,
 			    csr_roaminfo->paddIE, csr_roaminfo->addIELen)) {

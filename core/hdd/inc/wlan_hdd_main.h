@@ -95,6 +95,7 @@
 #include "wlan_hdd_nud_tracking.h"
 #include "wlan_hdd_twt.h"
 #include "wma_sar_public_structs.h"
+#include "wlan_mlme_ucfg_api.h"
 
 /*
  * Preprocessor definitions and constants
@@ -1032,6 +1033,7 @@ enum dhcp_nego_status {
  * @capability: Capability information of current station
  * @support_mode: Max supported mode of a station currently
  * connected to sap
+ * @assoc_req_ies: Assoc request IEs of the peer station
  */
 struct hdd_station_info {
 	bool in_use;
@@ -1077,6 +1079,7 @@ struct hdd_station_info {
 	enum dhcp_nego_status dhcp_nego_status;
 	uint16_t capability;
 	uint8_t support_mode;
+	struct wlan_ies assoc_req_ies;
 };
 
 /**
@@ -1247,7 +1250,7 @@ struct hdd_context;
  * @event_flags: a bitmap of hdd_adapter_flags
  * @acs_complete_event: acs complete event
  * @last_disconnect_reason: Last disconnected internal reason code
- *                          as per enum eSirMacReasonCodes
+ *                          as per enum qca_disconnect_reason_codes
  */
 struct hdd_adapter {
 	/* Magic cookie for adapter sanity verification.  Note that this
@@ -1501,7 +1504,15 @@ struct hdd_adapter {
 #ifdef WLAN_DEBUGFS
 	struct hdd_debugfs_file_info csr_file[HDD_DEBUGFS_FILE_ID_MAX];
 #endif /* WLAN_DEBUGFS */
-	enum eSirMacReasonCodes last_disconnect_reason;
+	enum qca_disconnect_reason_codes last_disconnect_reason;
+
+#ifdef WLAN_FEATURE_PERIODIC_STA_STATS
+	/* Indicate whether to display sta periodic stats */
+	bool is_sta_periodic_stats_enabled;
+	uint16_t periodic_stats_timer_count;
+	uint32_t periodic_stats_timer_counter;
+	qdf_mutex_t sta_periodic_stats_lock;
+#endif /* WLAN_FEATURE_PERIODIC_STA_STATS */
 };
 
 #define WLAN_HDD_GET_STATION_CTX_PTR(adapter) (&(adapter)->session.station)
@@ -2086,6 +2097,7 @@ struct hdd_context {
 	qdf_mc_timer_t sar_safety_timer;
 	qdf_mc_timer_t sar_safety_unsolicited_timer;
 	qdf_event_t sar_safety_req_resp_event;
+	qdf_atomic_t sar_safety_req_resp_event_in_progress;
 #endif
 	bool roam_ch_from_fw_supported;
 };
@@ -2988,6 +3000,17 @@ void wlan_hdd_clear_tx_rx_histogram(struct hdd_context *hdd_ctx);
 void
 wlan_hdd_display_netif_queue_history(struct hdd_context *hdd_ctx,
 				     enum qdf_stats_verbosity_level verb_lvl);
+
+/**
+ * wlan_hdd_display_adapter_netif_queue_history() - display adapter based netif
+ * queue history
+ * @adapter: hdd adapter
+ *
+ * Return: none
+ */
+void
+wlan_hdd_display_adapter_netif_queue_history(struct hdd_adapter *adapter);
+
 void wlan_hdd_clear_netif_queue_history(struct hdd_context *hdd_ctx);
 const char *hdd_get_fwpath(void);
 void hdd_indicate_mgmt_frame(tSirSmeMgmtFrameInd *frame_ind);
@@ -4021,7 +4044,6 @@ bool wlan_hdd_check_mon_concurrency(void);
  * wlan_hdd_add_monitor_check() - check for monitor intf and add if needed
  * @hdd_ctx: pointer to hdd context
  * @adapter: output pointer to hold created monitor adapter
- * @type: type of the interface
  * @name: name of the interface
  * @rtnl_held: True if RTNL lock is held
  * @name_assign_type: the name of assign type of the netdev
@@ -4031,8 +4053,8 @@ bool wlan_hdd_check_mon_concurrency(void);
  */
 int wlan_hdd_add_monitor_check(struct hdd_context *hdd_ctx,
 			       struct hdd_adapter **adapter,
-			       enum nl80211_iftype type, const char *name,
-			       bool rtnl_held, unsigned char name_assign_type);
+			       const char *name, bool rtnl_held,
+			       unsigned char name_assign_type);
 
 /**
  * wlan_hdd_del_monitor() - delete monitor interface
@@ -4062,8 +4084,8 @@ bool wlan_hdd_check_mon_concurrency(void)
 static inline
 int wlan_hdd_add_monitor_check(struct hdd_context *hdd_ctx,
 			       struct hdd_adapter **adapter,
-			       enum nl80211_iftype type, const char *name,
-			       bool rtnl_held, unsigned char name_assign_type)
+			       const char *name, bool rtnl_held,
+			       unsigned char name_assign_type)
 {
 	return 0;
 }
