@@ -80,9 +80,6 @@
 #include <linux/sysctl.h>
 #include <linux/kcov.h>
 #include <linux/cpufreq_times.h>
-#include <linux/cpu_input_boost.h>
-#include <linux/devfreq_boost.h>
-
 #include <asm/pgtable.h>
 #include <asm/pgalloc.h>
 #include <asm/uaccess.h>
@@ -1803,14 +1800,6 @@ long _do_fork(unsigned long clone_flags,
 	struct task_struct *p;
 	int trace = 0;
 	long nr;
-
-#ifdef CONFIG_CPU_INPUT_BOOST
-	/* Boost to max for ${cib_max_boost_duration} ms when userspace launches an app */
-	if (task_is_zygote(current)) {
-		cpu_input_boost_kick_max(cib_max_boost_duration);
-		devfreq_boost_kick_max(DEVFREQ_MSM_CPUBW, cib_max_boost_duration);
-	}
-#endif
 
 	/*
 	 * Determine whether and which event to report to ptracer.  When
