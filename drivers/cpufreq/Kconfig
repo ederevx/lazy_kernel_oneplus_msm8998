@@ -5,8 +5,8 @@ config CPU_FREQ
 	select SRCU
 	select IRQ_WORK
 	help
-	  CPU Frequency scaling allows you to change the clock speed of 
-	  CPUs on the fly. This is a nice method to save power, because 
+	  CPU Frequency scaling allows you to change the clock speed of
+	  CPUs on the fly. This is a nice method to save power, because
 	  the lower the CPU clock speed, the less power the CPU consumes.
 
 	  Note that this driver doesn't automatically change the CPU
@@ -85,7 +85,7 @@ config CPU_FREQ_DEFAULT_GOV_USERSPACE
 	select CPU_FREQ_GOV_USERSPACE
 	help
 	  Use the CPUFreq governor 'userspace' as default. This allows
-	  you to set the CPU frequency manually or when a userspace 
+	  you to set the CPU frequency manually or when a userspace
 	  program shall be able to set the CPU dynamically without having
 	  to enable the userspace governor manually.
 
@@ -160,7 +160,7 @@ config CPU_FREQ_GOV_USERSPACE
 	help
 	  Enable this cpufreq governor when you either want to set the
 	  CPU frequency manually or when a userspace program shall
-	  be able to set the CPU dynamically, like on LART 
+	  be able to set the CPU dynamically, like on LART
 	  <http://www.lartmaker.nl/>.
 
 	  To compile this driver as a module, choose M here: the
@@ -175,11 +175,11 @@ config CPU_FREQ_GOV_ONDEMAND
 	select CPU_FREQ_GOV_COMMON
 	help
 	  'ondemand' - This driver adds a dynamic cpufreq policy governor.
-	  The governor does a periodic polling and 
+	  The governor does a periodic polling and
 	  changes frequency based on the CPU utilization.
 	  The support for this governor depends on CPU capability to
 	  do fast frequency switching (i.e, very low latency frequency
-	  transitions). 
+	  transitions).
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called cpufreq_ondemand.
@@ -253,76 +253,6 @@ config CPU_FREQ_GOV_SCHEDUTIL
 	  both cases.
 
 	  If in doubt, say N.
-
-config CPU_INPUT_BOOST
-	bool "CPU Input Boost"
-	help
-	  Boosts the CPU on touchscreen and touchpad input, and allows for
-	  boosting on other custom events, mainly which is intended to be for
-	  boosting when there is a new frame ready to be rendered to the
-	  display. The boost frequencies for this driver should be set so that
-	  frame drops are near-zero at the boosted frequencies and power
-	  consumption is minimized at said frequency combination.
-
-if CPU_INPUT_BOOST
-
-config INPUT_BOOST_DURATION_MS
-	int "Input boost duration"
-	default "100"
-	help
-	  Input boost duration in milliseconds.
-
-config WAKE_BOOST_DURATION_MS
-	int "Wake boost duration"
-	default "1000"
-	help
-	  Wake boost duration in milliseconds.
-
-config MAX_BOOST_DURATION_MS
-	int "Max boost duration"
-	default "2500"
-	help
-	 Max boost duration in milliseconds.
-
-config BASE_BOOST_FREQ_LP
-	int "Low-power cluster base frequency"
-	default "0"
-	help
-	  Base frequency for the low-power CPU cluster. The cluster will revert
-	  to this frequency after all boosts have expired.
-
-config BASE_BOOST_FREQ_PERF
-	int "Performance cluster base frequency"
-	default "0"
-	help
-	  Base frequency for the performance CPU cluster. The cluster will
-	  revert to this frequency after all boosts have expired.
-
-config INPUT_BOOST_FREQ_LP
-	int "Low-power cluster boost freq"
-	default "0"
-	help
-	  Input boost frequency for the low-power CPU cluster.
-
-config INPUT_BOOST_FREQ_PERF
-	int "Performance cluster boost freq"
-	default "0"
-	help
-	  Input boost frequency for the performance CPU cluster.
-
-config MAX_BOOST_FREQ_LP
-	int "Low-power cluster max-boost freq"
-	default "0"
-	help
-	  Max-boost frequency for the low-power CPU cluster.
-
-config MAX_BOOST_FREQ_PERF
-	int "Performance cluster max-boost freq"
-	default "0"
-	help
-	  Max-boost frequency for the performance CPU cluster.
-
-endif
 
 comment "CPU frequency scaling drivers"
 
