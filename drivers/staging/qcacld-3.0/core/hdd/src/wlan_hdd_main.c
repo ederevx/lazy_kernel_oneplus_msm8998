@@ -5090,8 +5090,6 @@ static void hdd_cleanup_adapter(struct hdd_context *hdd_ctx,
 	if (adapter->device_mode == QDF_STA_MODE)
 		hdd_sysfs_destroy_adapter_root_obj(adapter);
 
-	hdd_debugfs_exit(adapter);
-
 	/*
 	 * The adapter is marked as closed. When hdd_wlan_exit() call returns,
 	 * the driver is almost closed and cannot handle either control
@@ -5938,10 +5936,6 @@ struct hdd_adapter *hdd_open_adapter(struct hdd_context *hdd_ctx, uint8_t sessio
 
 		hdd_check_and_restart_sap_with_non_dfs_acs();
 	}
-
-	if (QDF_STATUS_SUCCESS != hdd_debugfs_init(adapter))
-		hdd_err("Interface %s wow debug_fs init failed",
-			netdev_name(adapter->dev));
 
 	hdd_debug("%s interface created. iftype: %d", netdev_name(adapter->dev),
 		  session_type);
@@ -12604,7 +12598,6 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode)
 	bool is_recovery_stop = cds_is_driver_recovering();
 	int ret = 0;
 	int active_threads;
-	int debugfs_threads;
 	struct target_psoc_info *tgt_hdl;
 
 	hdd_enter();
@@ -12619,13 +12612,10 @@ int hdd_wlan_stop_modules(struct hdd_context *hdd_ctx, bool ftm_mode)
 	cds_set_module_stop_in_progress(true);
 
 	active_threads = cds_return_external_threads_count();
-	debugfs_threads = hdd_return_debugfs_threads_count();
 
-	if (active_threads > 0 || debugfs_threads > 0 ||
-	    hdd_ctx->is_wiphy_suspended) {
-		hdd_warn("External threads %d, Debugfs threads %d, wiphy suspend %d",
-			 active_threads, debugfs_threads,
-			 hdd_ctx->is_wiphy_suspended);
+	if (active_threads > 0 || hdd_ctx->is_wiphy_suspended) {
+		hdd_warn("External threads %d, wiphy suspend %d",
+			 active_threads, hdd_ctx->is_wiphy_suspended);
 
 		if (active_threads)
 			cds_print_external_threads();
