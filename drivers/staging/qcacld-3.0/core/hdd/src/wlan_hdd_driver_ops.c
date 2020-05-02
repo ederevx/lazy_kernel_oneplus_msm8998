@@ -520,9 +520,6 @@ static void wlan_hdd_remove(struct device *dev)
 	if (!cds_wait_for_external_threads_completion(__func__))
 		hdd_warn("External threads are still active attempting driver unload anyway");
 
-	if (!hdd_wait_for_debugfs_threads_completion())
-		hdd_warn("Debugfs threads are still active attempting driver unload anyway");
-
 	mutex_lock(&hdd_init_deinit_lock);
 	hdd_start_driver_ops_timer(eHDD_DRV_OP_REMOVE);
 	if (QDF_IS_EPPING_ENABLED(cds_get_conparam())) {
@@ -634,9 +631,6 @@ static void wlan_hdd_shutdown(void)
 
 	if (!cds_wait_for_external_threads_completion(__func__))
 		hdd_err("Host is not ready for SSR, attempting anyway");
-
-	if (!hdd_wait_for_debugfs_threads_completion())
-		hdd_err("Debufs threads are still pending, attempting SSR anyway");
 
 	if (!QDF_IS_EPPING_ENABLED(cds_get_conparam())) {
 		hif_disable_isr(hif_ctx);
