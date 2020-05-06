@@ -77,13 +77,13 @@ static int slim0_rx_aanc_fb_port;
 static int msm_route_ec_ref_rx;
 static int msm_ec_ref_ch = 4;
 static int msm_ec_ref_bit_format = SNDRV_PCM_FORMAT_S16_LE;
-static int msm_ec_ref_sampling_rate = 48000;
+static int msm_ec_ref_sampling_rate = 5;
 static uint32_t voc_session_id = ALL_SESSION_VSID;
 static int msm_route_ext_ec_ref;
 static bool is_custom_stereo_on = 1;
 static bool is_ds2_on = 1;
 static bool swap_ch;
-static int msm_native_mode;
+static int msm_native_mode = 3;
 
 #define WEIGHT_0_DB 0x4000
 /* all the FEs which can support channel mixer */
