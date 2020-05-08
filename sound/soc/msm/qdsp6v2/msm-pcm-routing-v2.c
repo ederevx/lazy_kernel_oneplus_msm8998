@@ -80,8 +80,8 @@ static int msm_ec_ref_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_ec_ref_sampling_rate = 48000;
 static uint32_t voc_session_id = ALL_SESSION_VSID;
 static int msm_route_ext_ec_ref;
-static bool is_custom_stereo_on;
-static bool is_ds2_on;
+static bool is_custom_stereo_on = 1;
+static bool is_ds2_on = 1;
 static bool swap_ch;
 static int msm_native_mode;
 

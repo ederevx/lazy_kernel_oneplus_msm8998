@@ -179,8 +179,8 @@ struct ds2_dap_params_states_s {
 	bool custom_stereo_onoff;
 };
 
-static struct ds2_dap_params_states_s ds2_dap_params_states = {true, false,
-				false, DEVICE_NONE};
+static struct ds2_dap_params_states_s ds2_dap_params_states = {true, true,
+				DAP_HARD_BYPASS, DEVICE_NONE};
 
 static int all_supported_devices = EARPIECE|SPEAKER|WIRED_HEADSET|
 			WIRED_HEADPHONE|BLUETOOTH_SCO|AUX_DIGITAL|
