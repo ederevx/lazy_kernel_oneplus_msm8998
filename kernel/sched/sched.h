@@ -1120,11 +1120,12 @@ static inline unsigned int group_first_cpu(struct sched_group *group)
 
 extern int group_balance_cpu(struct sched_group *sg);
 
-#else
+extern void flush_smp_call_function_from_idle(void);
 
+#else /* !CONFIG_SMP: */
+static inline void flush_smp_call_function_from_idle(void) { }
 static inline void sched_ttwu_pending(void) { }
-
-#endif /* CONFIG_SMP */
+#endif
 
 #include "stats.h"
 #include "auto_group.h"
