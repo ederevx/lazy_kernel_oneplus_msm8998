@@ -19,6 +19,7 @@ int schedtune_task_boost(struct task_struct *tsk);
 
 int schedtune_boost_bias_rcu_locked(struct task_struct *tsk);
 int schedtune_boost_bias(struct task_struct *tsk);
+int schedtune_crucial(struct task_struct *tsk);
 int schedtune_prefer_idle(struct task_struct *tsk);
 
 void schedtune_exit_task(struct task_struct *tsk);
