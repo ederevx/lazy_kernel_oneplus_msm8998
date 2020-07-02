@@ -3595,6 +3595,7 @@ int do_stune_boost(char *st_name, int boost, int *slot);
 int do_stune_sched_boost(char *st_name, int *slot);
 int reset_stune_boost(char *st_name, int slot);
 int do_prefer_idle(char *st_name, u64 prefer_idle);
+int do_crucial(char *st_name, u64 crucial);
 #else /* !CONFIG_DYNAMIC_STUNE_BOOST */
 static inline int do_stune_boost(char *st_name, int boost, int *slot)
 {
@@ -3612,6 +3613,11 @@ static inline int reset_stune_boost(char *st_name, int slot)
 }
 
 static inline int do_prefer_idle(char *st_name, u64 prefer_idle)
+{
+	return 0;
+}
+
+static inline int do_crucial(char *st_name, u64 prefer_idle)
 {
 	return 0;
 }

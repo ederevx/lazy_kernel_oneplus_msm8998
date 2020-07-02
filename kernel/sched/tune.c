@@ -1153,6 +1153,16 @@ int do_prefer_idle(char *st_name, u64 prefer_idle)
 	return prefer_idle_write(&st->css, NULL, prefer_idle);
 }
 
+int do_crucial(char *st_name, u64 crucial)
+{
+	struct schedtune *st = stune_get_by_name(st_name);
+
+	if (!st)
+		return -EINVAL;
+
+	return crucial_write(&st->css, NULL, crucial);
+}
+
 #endif /* CONFIG_DYNAMIC_STUNE_BOOST */
 
 #else /* CONFIG_CGROUP_SCHEDTUNE */
