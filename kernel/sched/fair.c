@@ -7098,19 +7098,38 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 				continue;
 
 			/*
+			* Skip other calculations if the task is crucial. If the
+			* crucial_cpu has been established then skip other cpus unless
+			* if a cpu with higher capacity is found in which that cpu will
+			* get tracked instead.
+			*/
+			if (crucial) {
+
+				/* Only allow idle_cpus to be tracked, skip if not. */
+				if (idle_cpu(i)) {
+
+					/*
+					* Skip idle cpus with less than or equal to established crucial max
+					* capacity.
+					*/
+					if (capacity_orig <= crucial_max_cap)
+						continue;
+
+					crucial_max_cap = capacity_orig;
+					crucial_cpu = i;
+					continue;
+				}
+				if (crucial_cpu != -1)
+					continue;
+			}
+
+			/*
 			 * p's blocked utilization is still accounted for on prev_cpu
 			 * so prev_cpu will receive a negative bias due to the double
 			 * accounting. However, the blocked utilization may be zero.
 			 */
 			wake_util = cpu_util_without(i, p);
 			new_util = wake_util + task_util_est(p);
-
-			/* Track the idle CPU with the largest capacity */
-			if (crucial && idle_cpu(i) &&
-					capacity_orig > crucial_max_cap) {
-				crucial_max_cap = capacity_orig;
-				crucial_cpu = i;
-			}
 
 			/*
 			 * Ensure minimum capacity to grant the required boost.
