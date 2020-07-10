@@ -701,7 +701,7 @@ static int wwan_add_ul_flt_rule_to_ipa(void)
 	/* send ipa_fltr_installed_notif_req_msg_v01 to Q6*/
 	req->source_pipe_index =
 		ipa2_get_ep_mapping(IPA_CLIENT_APPS_LAN_WAN_PROD);
-	req->install_status = QMI_RESULT_SUCCESS_V01;
+	req->install_status = IPA_QMI_RESULT_SUCCESS_V01;
 	req->filter_index_list_len = num_q6_rule;
 	mutex_lock(&ipa_qmi_lock);
 	for (i = 0; i < num_q6_rule; i++) {
@@ -2554,7 +2554,8 @@ static void tethering_stats_poll_queue(struct work_struct *work)
 
 	/* Schedule again only if there's an active polling interval */
 	if (0 != ipa_rmnet_ctx.polling_interval)
-		schedule_delayed_work(&ipa_tether_stats_poll_wakequeue_work,
+		queue_delayed_work(system_power_efficient_wq,
+			&ipa_tether_stats_poll_wakequeue_work,
 			msecs_to_jiffies(ipa_rmnet_ctx.polling_interval*1000));
 }
 
@@ -2648,7 +2649,8 @@ int rmnet_ipa_poll_tethering_stats(struct wan_ioctl_poll_tethering_stats *data)
 		return 0;
 	}
 
-	schedule_delayed_work(&ipa_tether_stats_poll_wakequeue_work, 0);
+	queue_delayed_work(system_power_efficient_wq,
+			&ipa_tether_stats_poll_wakequeue_work, 0);
 	return 0;
 }
 

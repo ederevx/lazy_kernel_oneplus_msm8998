@@ -985,7 +985,7 @@ static int soc_bind_dai_link(struct snd_soc_card *card, int num)
 		rtd->platform = platform;
 	}
 	if (!rtd->platform) {
-		dev_err(card->dev, "ASoC: platform %s not registered\n",
+		dev_dbg(card->dev, "ASoC: platform %s not registered\n",
 			dai_link->platform_name);
 		return -EPROBE_DEFER;
 	}
@@ -2433,7 +2433,11 @@ int snd_soc_register_card(struct snd_soc_card *card)
 	if (card->rtd == NULL)
 		return -ENOMEM;
 	card->num_rtd = 0;
-	card->rtd_aux = &card->rtd[card->num_links];
+
+	if (card->num_aux_devs > 0)
+		card->rtd_aux = &card->rtd[card->num_links];
+	else
+		card->rtd_aux = NULL;
 
 	for (i = 0; i < card->num_links; i++) {
 		card->rtd[i].card = card;

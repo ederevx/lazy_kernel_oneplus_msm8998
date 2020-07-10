@@ -60,8 +60,9 @@ static inline unsigned int get_freq_target(struct cs_dbs_tuners *cs_tuners,
 static void cs_check_cpu(int cpu, unsigned int load)
 {
 	struct cs_cpu_dbs_info_s *dbs_info = &per_cpu(cs_cpu_dbs_info, cpu);
-	struct cpufreq_policy *policy = dbs_info->cdbs.shared->policy;
-	struct dbs_data *dbs_data = policy->governor_data;
+	struct cpufreq_policy *policy = dbs_info->cdbs.policy_dbs->policy;
+	struct policy_dbs_info *policy_dbs = policy->governor_data;
+	struct dbs_data *dbs_data = policy_dbs->dbs_data;
 	struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
 
 	/*
@@ -115,14 +116,13 @@ static void cs_check_cpu(int cpu, unsigned int load)
 	}
 }
 
-static unsigned int cs_dbs_timer(struct cpu_dbs_info *cdbs,
-				 struct dbs_data *dbs_data, bool modify_all)
+static unsigned int cs_dbs_timer(struct cpufreq_policy *policy)
 {
+	struct policy_dbs_info *policy_dbs = policy->governor_data;
+	struct dbs_data *dbs_data = policy_dbs->dbs_data;
 	struct cs_dbs_tuners *cs_tuners = dbs_data->tuners;
 
-	if (modify_all)
-		dbs_check_cpu(dbs_data, cdbs->shared->policy->cpu);
-
+	dbs_check_cpu(policy);
 	return delay_for_sampling_rate(cs_tuners->sampling_rate);
 }
 
@@ -281,7 +281,7 @@ show_store_one(cs, up_threshold);
 show_store_one(cs, down_threshold);
 show_store_one(cs, ignore_nice_load);
 show_store_one(cs, freq_step);
-declare_show_sampling_rate_min(cs);
+show_one_common(cs, min_sampling_rate);
 
 gov_sys_pol_attr_rw(sampling_rate);
 gov_sys_pol_attr_rw(sampling_down_factor);
@@ -289,10 +289,10 @@ gov_sys_pol_attr_rw(up_threshold);
 gov_sys_pol_attr_rw(down_threshold);
 gov_sys_pol_attr_rw(ignore_nice_load);
 gov_sys_pol_attr_rw(freq_step);
-gov_sys_pol_attr_ro(sampling_rate_min);
+gov_sys_pol_attr_ro(min_sampling_rate);
 
 static struct attribute *dbs_attributes_gov_sys[] = {
-	&sampling_rate_min_gov_sys.attr,
+	&min_sampling_rate_gov_sys.attr,
 	&sampling_rate_gov_sys.attr,
 	&sampling_down_factor_gov_sys.attr,
 	&up_threshold_gov_sys.attr,
@@ -308,7 +308,7 @@ static struct attribute_group cs_attr_group_gov_sys = {
 };
 
 static struct attribute *dbs_attributes_gov_pol[] = {
-	&sampling_rate_min_gov_pol.attr,
+	&min_sampling_rate_gov_pol.attr,
 	&sampling_rate_gov_pol.attr,
 	&sampling_down_factor_gov_pol.attr,
 	&up_threshold_gov_pol.attr,
@@ -361,6 +361,14 @@ static void cs_exit(struct dbs_data *dbs_data, bool notify)
 	kfree(dbs_data->tuners);
 }
 
+static void cs_start(struct cpufreq_policy *policy)
+{
+	struct cs_cpu_dbs_info_s *dbs_info = &per_cpu(cs_cpu_dbs_info, policy->cpu);
+
+	dbs_info->down_skip = 0;
+	dbs_info->requested_freq = policy->cur;
+}
+
 define_get_cpu_dbs_routines(cs_cpu_dbs_info);
 
 static struct common_dbs_data cs_dbs_cdata = {
@@ -373,7 +381,7 @@ static struct common_dbs_data cs_dbs_cdata = {
 	.gov_check_cpu = cs_check_cpu,
 	.init = cs_init,
 	.exit = cs_exit,
-	.mutex = __MUTEX_INITIALIZER(cs_dbs_cdata.mutex),
+	.start = cs_start,
 };
 
 static int cs_cpufreq_governor_dbs(struct cpufreq_policy *policy,

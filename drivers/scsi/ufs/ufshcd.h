@@ -1160,6 +1160,8 @@ out:
 
 int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size);
 
+int ufshcd_read_geometry_desc(struct ufs_hba *hba, u8 *buf, u32 size);
+
 static inline bool ufshcd_is_hs_mode(struct ufs_pa_layer_attr *pwr_info)
 {
 	return (pwr_info->pwr_rx == FAST_MODE ||
@@ -1352,7 +1354,7 @@ static inline void ufshcd_vops_remove_debugfs(struct ufs_hba *hba)
 		hba->var->vops->remove_debugfs(hba);
 }
 #else
-static inline void ufshcd_vops_add_debugfs(struct ufs_hba *hba, struct dentry *)
+static inline void ufshcd_vops_add_debugfs(struct ufs_hba *hba, struct dentry *root)
 {
 }
 

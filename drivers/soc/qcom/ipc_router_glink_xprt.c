@@ -10,11 +10,6 @@
  * GNU General Public License for more details.
  */
 
-/*
- * IPC ROUTER GLINK XPRT module.
- */
-#define DEBUG
-
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/types.h>
@@ -27,7 +22,7 @@
 #include <soc/qcom/glink.h>
 #include <soc/qcom/subsystem_restart.h>
 
-static int ipc_router_glink_xprt_debug_mask;
+static int ipc_router_glink_xprt_debug_mask = 0;
 module_param_named(debug_mask, ipc_router_glink_xprt_debug_mask,
 		   int, S_IRUGO | S_IWUSR | S_IWGRP);
 
@@ -506,8 +501,6 @@ static void glink_xprt_notify_rxv(void *handle, const void *priv,
 static void glink_xprt_notify_tx_done(void *handle, const void *priv,
 				      const void *pkt_priv, const void *ptr)
 {
-	struct ipc_router_glink_xprt *glink_xprtp =
-		(struct ipc_router_glink_xprt *)priv;
 	struct rr_packet *temp_pkt = (struct rr_packet *)ptr;
 
 	D("%s:%s: @ %p\n", __func__, glink_xprtp->ipc_rtr_xprt_name, ptr);

@@ -48,6 +48,28 @@
 
 #define MAX_SUPPORTED_INSTANCES 16
 
+#ifndef CONFIG_DEBUG_KERNEL
+int msm_vidc_debug = 0;
+EXPORT_SYMBOL(msm_vidc_debug);
+
+int msm_vidc_debug_out = VIDC_OUT_PRINTK;
+EXPORT_SYMBOL(msm_vidc_debug_out);
+
+int msm_vidc_fw_debug = 0;
+int msm_vidc_fw_debug_mode = 0;
+int msm_vidc_fw_low_power_mode = 1;
+int msm_vidc_hw_rsp_timeout = 2000;
+bool msm_vidc_fw_coverage = false;
+bool msm_vidc_vpe_csc_601_to_709 = false;
+bool msm_vidc_dec_dcvs_mode = true;
+bool msm_vidc_enc_dcvs_mode = true;
+bool msm_vidc_sys_idle_indicator = false;
+int msm_vidc_firmware_unload_delay = 15000;
+bool msm_vidc_thermal_mitigation_disabled = false;
+bool msm_vidc_bitrate_clock_scaling = true;
+bool msm_vidc_debug_timeout = false;
+#endif
+
 const char *const mpeg_video_vidc_extradata[] = {
 	"Extradata none",
 	"Extradata MB Quantization",
@@ -712,16 +734,16 @@ static void handle_sys_init_done(enum hal_command_response cmd, void *data)
 	return;
 }
 
+static void put_inst_helper(struct kref *kref)
+{
+	struct msm_vidc_inst *inst = container_of(kref, struct msm_vidc_inst,
+			kref);
+
+	msm_vidc_destroy(inst);
+}
+
 static void put_inst(struct msm_vidc_inst *inst)
 {
-	void put_inst_helper(struct kref *kref)
-	{
-		struct msm_vidc_inst *inst = container_of(kref,
-				struct msm_vidc_inst, kref);
-
-		msm_vidc_destroy(inst);
-	}
-
 	if (!inst)
 		return;
 
@@ -3858,17 +3880,20 @@ int msm_comm_qbuf(struct msm_vidc_inst *inst, struct vb2_buffer *vb)
 	 * Don't queue if:
 	 * 1) Hardware isn't ready (that's simple)
 	 */
-	defer = defer ?: inst->state != MSM_VIDC_START_DONE;
+	if (!defer)
+		defer = inst->state != MSM_VIDC_START_DONE;
 
 	/*
 	 * 2) The client explicitly tells us not to because it wants this
 	 * buffer to be batched with future frames.  The batch size (on both
 	 * capabilities) is completely determined by the client.
 	 */
-	defer = defer ?: vbuf && vbuf->flags & V4L2_MSM_BUF_FLAG_DEFER;
+	if (!defer)
+		defer = vbuf && vbuf->flags & V4L2_MSM_BUF_FLAG_DEFER;
 
 	/* 3) If we're in batch mode, we must have full batches of both types */
-	defer = defer ?: batch_mode && (!output_count || !capture_count);
+	if (!defer)
+		defer = batch_mode && (!output_count || !capture_count);
 
 	if (defer) {
 		dprintk(VIDC_DBG, "Deferring queue of %pK\n", vb);
@@ -4906,7 +4931,8 @@ static int msm_vidc_load_supported(struct msm_vidc_inst *inst)
 		LOAD_CALC_IGNORE_THUMBNAIL_LOAD |
 		LOAD_CALC_IGNORE_NON_REALTIME_LOAD;
 
-	if (inst->state == MSM_VIDC_OPEN_DONE) {
+        if (inst->state >= MSM_VIDC_OPEN_DONE &&
+                inst->state <= MSM_VIDC_STOP_DONE) {
 		max_load_adj = inst->core->resources.max_load +
 			inst->capability.mbs_per_frame.max;
 		num_mbs_per_sec = msm_comm_get_load(inst->core,

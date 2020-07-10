@@ -3,7 +3,7 @@
  * MSM architecture cpufreq driver
  *
  * Copyright (C) 2007 Google, Inc.
- * Copyright (c) 2007-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2007-2018, The Linux Foundation. All rights reserved.
  * Author: Mike A. Chan <mikechan@google.com>
  *
  * This software is licensed under the terms of the GNU General Public
@@ -61,8 +61,11 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 	rate = clk_round_rate(cpu_clk[policy->cpu], rate);
 	ret = clk_set_rate(cpu_clk[policy->cpu], rate);
 	cpufreq_freq_transition_end(policy, &freqs, ret);
-	if (!ret)
+	if (!ret) {
+		arch_set_freq_scale(policy->related_cpus, new_freq,
+				    policy->cpuinfo.max_freq);
 		trace_cpu_frequency_switch_end(policy->cpu);
+	}
 
 	return ret;
 }
@@ -82,7 +85,7 @@ static int msm_cpufreq_target(struct cpufreq_policy *policy,
 
 	if (per_cpu(suspend_data, policy->cpu).device_suspended) {
 		pr_debug("cpufreq: cpu%d scheduling frequency change "
-				"in suspend.\n", policy->cpu);
+			"in suspend.\n", policy->cpu);
 		ret = -EFAULT;
 		goto done;
 	}
@@ -94,6 +97,7 @@ static int msm_cpufreq_target(struct cpufreq_policy *policy,
 		ret = -ENODEV;
 		goto done;
 	}
+
 	if (cpufreq_frequency_table_target(policy, table, target_freq, relation,
 			&index)) {
 		pr_err("cpufreq: invalid target_freq: %d\n", target_freq);
@@ -170,6 +174,7 @@ static int msm_cpufreq_init(struct cpufreq_policy *policy)
 	pr_debug("cpufreq: cpu%d init at %d switching to %d\n",
 			policy->cpu, cur_freq, table[index].frequency);
 	policy->cur = table[index].frequency;
+	policy->dvfs_possible_from_any_cpu = true;
 
 	return 0;
 }

@@ -558,6 +558,7 @@ static void ufshcd_cmd_log_init(struct ufs_hba *hba)
 	}
 }
 
+#ifdef CONFIG_TRACEPOINTS
 static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
 			     unsigned int tag, u8 cmd_id, u8 idn, u8 lun,
 			     sector_t lba, int transfer_len, u8 opcode)
@@ -586,6 +587,7 @@ static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
 
 	ufshcd_add_command_trace(hba, entry, opcode);
 }
+#endif
 
 static void ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
 	unsigned int tag, u8 cmd_id, u8 idn)
@@ -613,7 +615,7 @@ static void ufshcd_print_cmd_log(struct ufs_hba *hba)
 		p = &hba->cmd_log.entries[pos];
 		pos = (pos + 1) % UFSHCD_MAX_CMD_LOGGING;
 
-		if (ktime_to_us(p->tstamp)) {
+		/*if (ktime_to_us(p->tstamp)) {
 			pr_err("%s: %s: seq_no=%u lun=0x%x cmd_id=0x%02x lba=0x%llx txfer_len=%d tag=%u, doorbell=0x%x outstanding=0x%x idn=%d time=%lld us\n",
 				p->cmd_type, p->str, p->seq_num,
 				p->lun, p->cmd_id, (unsigned long long)p->lba,
@@ -622,6 +624,7 @@ static void ufshcd_print_cmd_log(struct ufs_hba *hba)
 				ktime_to_us(p->tstamp));
 				usleep_range(1000, 1100);
 		}
+		*/
 	}
 }
 #else
@@ -629,6 +632,7 @@ static void ufshcd_cmd_log_init(struct ufs_hba *hba)
 {
 }
 
+#ifdef CONFIG_TRACEPOINTS
 static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
 			     unsigned int tag, u8 cmd_id, u8 idn, u8 lun,
 			     sector_t lba, int transfer_len, u8 opcode)
@@ -644,6 +648,7 @@ static void __ufshcd_cmd_log(struct ufs_hba *hba, char *str, char *cmd_type,
 
 	ufshcd_add_command_trace(hba, &entry, opcode);
 }
+#endif
 
 static void ufshcd_dme_cmd_log(struct ufs_hba *hba, char *str, u8 cmd_id)
 {
@@ -1428,6 +1433,8 @@ static void ufshcd_ungate_work(struct work_struct *work)
 	ufshcd_hba_vreg_set_hpm(hba);
 	ufshcd_enable_clocks(hba);
 
+	ufshcd_enable_irq(hba);
+
 	/* Exit from hibern8 */
 	if (ufshcd_can_hibern8_during_gating(hba)) {
 		/* Prevent gating in this path */
@@ -1589,6 +1596,8 @@ static void ufshcd_gate_work(struct work_struct *work)
 		}
 		ufshcd_set_link_hibern8(hba);
 	}
+
+	ufshcd_disable_irq(hba);
 
 	/*
 	 * If auto hibern8 is supported then the link will already
@@ -3824,6 +3833,12 @@ int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size)
 	return ufshcd_read_desc(hba, QUERY_DESC_IDN_DEVICE, 0, buf, size);
 }
 
+
+int ufshcd_read_geometry_desc(struct ufs_hba *hba, u8 *buf, u32 size)
+{
+       return ufshcd_read_desc(hba, QUERY_DESC_IDN_GEOMETRY, 0, buf, size);
+}
+
 /**
  * ufshcd_read_string_desc - read string descriptor
  * @hba: pointer to adapter instance
@@ -5419,12 +5434,14 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 			result = DID_ERROR << 16;
 			dev_err(hba->dev,
 				"Reject UPIU not fully implemented\n");
+			WARN_ON(1);
 			break;
 		default:
 			result = DID_ERROR << 16;
 			dev_err(hba->dev,
 				"Unexpected request response code = %x\n",
 				result);
+			WARN_ON(1);
 			break;
 		}
 		break;
@@ -5455,6 +5472,7 @@ ufshcd_transfer_rsp_status(struct ufs_hba *hba, struct ufshcd_lrb *lrbp)
 		 */
 		__ufshcd_print_host_regs(hba, true);
 		ufshcd_print_host_state(hba);
+		WARN_ON(1);
 		break;
 	} /* end of switch */
 
@@ -7595,6 +7613,7 @@ static int ufshcd_probe_hba(struct ufs_hba *hba)
 			}
 			hba->clk_scaling.is_allowed = true;
 		}
+		ufs_fill_info(hba);
 
 		scsi_scan_host(hba->host);
 		pm_runtime_put_sync(hba->dev);
@@ -9822,6 +9841,26 @@ static void ufshcd_resume_clkscaling(struct ufs_hba *hba)
 		devfreq_resume_device(hba->devfreq);
 }
 
+static int bogus_clkscale_enable = 1;
+static ssize_t ufshcd_bogus_clkscale_enable_show(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", bogus_clkscale_enable);
+}
+
+static ssize_t ufshcd_bogus_clkscale_enable_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t count)
+{
+	u32 value;
+
+	if (kstrtou32(buf, 0, &value))
+		return -EINVAL;
+
+	bogus_clkscale_enable = !!value;
+
+	return count;
+}
+
 static ssize_t ufshcd_clkscale_enable_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -9988,10 +10027,16 @@ start_window:
 	return 0;
 }
 
-static void ufshcd_clkscaling_init_sysfs(struct ufs_hba *hba)
+static void ufshcd_clkscaling_init_sysfs(struct ufs_hba *hba, bool bogus)
 {
-	hba->clk_scaling.enable_attr.show = ufshcd_clkscale_enable_show;
-	hba->clk_scaling.enable_attr.store = ufshcd_clkscale_enable_store;
+	if (bogus) {
+		hba->clk_scaling.enable_attr.show = ufshcd_bogus_clkscale_enable_show;
+		hba->clk_scaling.enable_attr.store = ufshcd_bogus_clkscale_enable_store;
+	} else {
+		hba->clk_scaling.enable_attr.show = ufshcd_clkscale_enable_show;
+		hba->clk_scaling.enable_attr.store = ufshcd_clkscale_enable_store;
+	}
+
 	sysfs_attr_init(&hba->clk_scaling.enable_attr.attr);
 	hba->clk_scaling.enable_attr.attr.name = "clkscale_enable";
 	hba->clk_scaling.enable_attr.attr.mode = S_IRUGO | S_IWUSR;
@@ -10171,7 +10216,9 @@ int ufshcd_init(struct ufs_hba *hba, void __iomem *mmio_base, unsigned int irq)
 			 host->host_no);
 		hba->clk_scaling.workq = create_singlethread_workqueue(wq_name);
 
-		ufshcd_clkscaling_init_sysfs(hba);
+		ufshcd_clkscaling_init_sysfs(hba, false);
+	} else {
+		ufshcd_clkscaling_init_sysfs(hba, true);
 	}
 
 	/*

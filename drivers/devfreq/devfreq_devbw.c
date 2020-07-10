@@ -29,6 +29,7 @@
 #include <trace/events/power.h>
 #include <linux/msm-bus.h>
 #include <linux/msm-bus-board.h>
+#include <linux/devfreq_boost.h>
 
 /* Has to be ULL to prevent overflow where this macro is used. */
 #define MBYTE (1ULL << 20)
@@ -231,6 +232,9 @@ int devfreq_add_devbw(struct device *dev)
 		return PTR_ERR(d->df);
 	}
 
+	if (!strcmp(dev_name(dev), "soc:qcom,cpubw"))
+		devfreq_register_boost_device(DEVFREQ_MSM_CPUBW, d->df);
+
 	return 0;
 }
 
@@ -279,12 +283,7 @@ static struct platform_driver devbw_driver = {
 	},
 };
 
-static int __init devbw_init(void)
-{
-	platform_driver_register(&devbw_driver);
-	return 0;
-}
-device_initcall(devbw_init);
+module_platform_driver(devbw_driver);
 
 MODULE_DESCRIPTION("Device DDR bandwidth voting driver MSM SoCs");
 MODULE_LICENSE("GPL v2");

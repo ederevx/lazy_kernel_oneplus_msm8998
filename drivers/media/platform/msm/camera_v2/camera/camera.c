@@ -581,10 +581,10 @@ static int camera_v4l2_fh_release(struct file *filep)
 	if (sp) {
 		v4l2_fh_del(&sp->fh);
 		v4l2_fh_exit(&sp->fh);
+		mutex_destroy(&sp->lock);
+		kzfree(sp);
 	}
 
-	mutex_destroy(&sp->lock);
-	kzfree(sp);
 	return 0;
 }
 
@@ -720,6 +720,7 @@ post_fail:
 command_ack_q_fail:
 	msm_destroy_session(pvdev->vdev->num);
 session_fail:
+	msm_pm_qos_update_request(CAMERA_ENABLE_PC_LATENCY);
 	pm_relax(&pvdev->vdev->dev);
 stream_fail:
 	camera_v4l2_vb2_q_release(filep);

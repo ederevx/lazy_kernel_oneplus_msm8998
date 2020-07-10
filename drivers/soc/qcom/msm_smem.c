@@ -588,12 +588,15 @@ void *smem_find(unsigned id, unsigned size_in, unsigned to_proc, unsigned flags)
 		return ERR_PTR(-EPROBE_DEFER);
 
 	ptr = smem_get_entry(id, &size, to_proc, flags);
-	if (!ptr)
+	if (!ptr) {
+		pr_err("smem_get_entry return null\n");
 		return 0;
-
+	}
 	size_in = ALIGN(size_in, 8);
 	if (size_in != size) {
 		SMEM_INFO("smem_find(%u, %u, %u, %u): wrong size %u\n",
+			id, size_in, to_proc, flags, size);
+		pr_err("smem_find(%u, %u, %u, %u): wrong size %u\n",
 			id, size_in, to_proc, flags, size);
 		return 0;
 	}
@@ -1642,12 +1645,13 @@ int __init msm_smem_init(void)
 
 	registered = true;
 	smem_max_items = SMEM_NUM_ITEMS;
+#ifdef CONFIG_IPC_LOGGING
 	smem_ipc_log_ctx = ipc_log_context_create(NUM_LOG_PAGES, "smem", 0);
 	if (!smem_ipc_log_ctx) {
 		pr_err("%s: unable to create logging context\n", __func__);
 		msm_smem_debug_mask = 0;
 	}
-
+#endif
 	rc = platform_driver_register(&msm_smem_driver);
 	if (rc) {
 		LOG_ERR("%s: msm_smem_driver register failed %d\n",

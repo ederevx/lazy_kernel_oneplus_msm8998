@@ -191,13 +191,10 @@ static void od_check_cpu(int cpu, unsigned int load)
 	}
 }
 
-static unsigned int od_dbs_timer(struct cpu_dbs_info *cdbs,
-				 struct dbs_data *dbs_data, bool modify_all)
+static unsigned int od_dbs_timer(struct cpufreq_policy *policy, bool modify_all)
 {
-	struct cpufreq_policy *policy = cdbs->shared->policy;
-	unsigned int cpu = policy->cpu;
-	struct od_cpu_dbs_info_s *dbs_info = &per_cpu(od_cpu_dbs_info,
-			cpu);
+	struct dbs_data *dbs_data = policy->governor_data;
+	struct od_cpu_dbs_info_s *dbs_info = &per_cpu(od_cpu_dbs_info, policy->cpu);
 	struct od_dbs_tuners *od_tuners = dbs_data->tuners;
 	int delay = 0, sample_type = dbs_info->sample_type;
 
@@ -211,7 +208,7 @@ static unsigned int od_dbs_timer(struct cpu_dbs_info *cdbs,
 		__cpufreq_driver_target(policy, dbs_info->freq_lo,
 					CPUFREQ_RELATION_H);
 	} else {
-		dbs_check_cpu(dbs_data, cpu);
+		dbs_check_cpu(policy);
 		if (dbs_info->freq_lo) {
 			/* Setup timer for SUB_SAMPLE */
 			dbs_info->sample_type = OD_SUB_SAMPLE;
@@ -271,13 +268,11 @@ static void update_sampling_rate(struct dbs_data *dbs_data,
 			continue;
 
 		next_sampling = jiffies + usecs_to_jiffies(new_rate);
-		appointed_at = dbs_info->cdbs.dwork.timer.expires;
+		appointed_at = dbs_info->cdbs.timer.expires;
 
 		if (time_before(next_sampling, appointed_at)) {
-			cancel_delayed_work_sync(&dbs_info->cdbs.dwork);
-
-			gov_queue_work(dbs_data, policy,
-				       usecs_to_jiffies(new_rate), true);
+			gov_cancel_work(shared);
+			gov_add_timers(policy, usecs_to_jiffies(new_rate));
 
 		}
 	}
@@ -417,7 +412,7 @@ show_store_one(od, up_threshold);
 show_store_one(od, sampling_down_factor);
 show_store_one(od, ignore_nice_load);
 show_store_one(od, powersave_bias);
-declare_show_sampling_rate_min(od);
+show_one_common(od, min_sampling_rate);
 
 gov_sys_pol_attr_rw(sampling_rate);
 gov_sys_pol_attr_rw(io_is_busy);
@@ -425,10 +420,10 @@ gov_sys_pol_attr_rw(up_threshold);
 gov_sys_pol_attr_rw(sampling_down_factor);
 gov_sys_pol_attr_rw(ignore_nice_load);
 gov_sys_pol_attr_rw(powersave_bias);
-gov_sys_pol_attr_ro(sampling_rate_min);
+gov_sys_pol_attr_ro(min_sampling_rate);
 
 static struct attribute *dbs_attributes_gov_sys[] = {
-	&sampling_rate_min_gov_sys.attr,
+	&min_sampling_rate_gov_sys.attr,
 	&sampling_rate_gov_sys.attr,
 	&up_threshold_gov_sys.attr,
 	&sampling_down_factor_gov_sys.attr,
@@ -444,7 +439,7 @@ static struct attribute_group od_attr_group_gov_sys = {
 };
 
 static struct attribute *dbs_attributes_gov_pol[] = {
-	&sampling_rate_min_gov_pol.attr,
+	&min_sampling_rate_gov_pol.attr,
 	&sampling_rate_gov_pol.attr,
 	&up_threshold_gov_pol.attr,
 	&sampling_down_factor_gov_pol.attr,
@@ -512,7 +507,6 @@ define_get_cpu_dbs_routines(od_cpu_dbs_info);
 static struct od_ops od_ops = {
 	.powersave_bias_init_cpu = ondemand_powersave_bias_init_cpu,
 	.powersave_bias_target = generic_powersave_bias_target,
-	.freq_increase = dbs_freq_increase,
 };
 
 static struct common_dbs_data od_dbs_cdata = {

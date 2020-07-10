@@ -62,6 +62,7 @@
 #include <linux/ipc_logging.h>
 #include <asm/irq.h>
 #include <linux/kthread.h>
+#include <uapi/linux/sched.h>
 
 #include <linux/msm-sps.h>
 #include <linux/platform_data/msm_serial_hs.h>
@@ -2831,6 +2832,7 @@ static int uartdm_init_port(struct uart_port *uport)
 	struct msm_hs_port *msm_uport = UARTDM_TO_MSM(uport);
 	struct msm_hs_tx *tx = &msm_uport->tx;
 	struct msm_hs_rx *rx = &msm_uport->rx;
+	struct sched_param param = { .sched_priority = 1 };
 
 	init_waitqueue_head(&rx->wait);
 	init_waitqueue_head(&tx->wait);
@@ -2845,15 +2847,18 @@ static int uartdm_init_port(struct uart_port *uport)
 		MSM_HS_ERR("%s(): error creating task", __func__);
 		goto exit_lh_init;
 	}
+	sched_setscheduler(rx->task, SCHED_FIFO, &param);
+
 	init_kthread_work(&rx->kwork, msm_serial_hs_rx_work);
 
 	init_kthread_worker(&tx->kworker);
 	tx->task = kthread_run(kthread_worker_fn,
 			&tx->kworker, "msm_serial_hs_%d_tx_work", uport->line);
-	if (IS_ERR(rx->task)) {
+	if (IS_ERR(tx->task)) {
 		MSM_HS_ERR("%s(): error creating task", __func__);
 		goto exit_lh_init;
 	}
+	sched_setscheduler(tx->task, SCHED_FIFO, &param);
 
 	init_kthread_work(&tx->kwork, msm_serial_hs_tx_work);
 
@@ -3390,6 +3395,7 @@ static void  msm_serial_hs_rt_init(struct uart_port *uport)
 	msm_uport->pm_state = MSM_HS_PM_SUSPENDED;
 	mutex_unlock(&msm_uport->mtx);
 	pm_runtime_enable(uport->dev);
+	tty_port_set_policy(&uport->state->port, SCHED_FIFO, 1);
 }
 
 static int msm_hs_runtime_suspend(struct device *dev)
@@ -3522,6 +3528,7 @@ static int msm_hs_probe(struct platform_device *pdev)
 	memset(name, 0, sizeof(name));
 	scnprintf(name, sizeof(name), "%s%s", dev_name(msm_uport->uport.dev),
 									"_state");
+#ifdef CONFIG_IPC_LOGGING
 	msm_uport->ipc_msm_hs_log_ctxt =
 			ipc_log_context_create(IPC_MSM_HS_LOG_STATE_PAGES,
 								name, 0);
@@ -3530,11 +3537,12 @@ static int msm_hs_probe(struct platform_device *pdev)
 								__func__);
 	} else {
 		msm_uport->ipc_debug_mask = INFO_LEV;
-		ret = sysfs_create_file(&pdev->dev.kobj,
-				&dev_attr_debug_mask.attr);
-		if (unlikely(ret))
-			MSM_HS_WARN("%s: Failed to create dev. attr", __func__);
 	}
+#endif
+	ret = sysfs_create_file(&pdev->dev.kobj,
+			&dev_attr_debug_mask.attr);
+	if (unlikely(ret))
+		MSM_HS_WARN("%s: Failed to create dev. attr", __func__);
 
 	uport->irq = core_irqres;
 	msm_uport->bam_irq = bam_irqres;
@@ -3612,30 +3620,33 @@ static int msm_hs_probe(struct platform_device *pdev)
 	memset(name, 0, sizeof(name));
 	scnprintf(name, sizeof(name), "%s%s", dev_name(msm_uport->uport.dev),
 									"_tx");
+#ifdef CONFIG_IPC_LOGGING
 	msm_uport->tx.ipc_tx_ctxt =
 		ipc_log_context_create(IPC_MSM_HS_LOG_DATA_PAGES, name, 0);
 	if (!msm_uport->tx.ipc_tx_ctxt)
 		dev_err(&pdev->dev, "%s: error creating tx logging context",
 								__func__);
-
+#endif
 	memset(name, 0, sizeof(name));
 	scnprintf(name, sizeof(name), "%s%s", dev_name(msm_uport->uport.dev),
 									"_rx");
+#ifdef CONFIG_IPC_LOGGING
 	msm_uport->rx.ipc_rx_ctxt = ipc_log_context_create(
 					IPC_MSM_HS_LOG_DATA_PAGES, name, 0);
 	if (!msm_uport->rx.ipc_rx_ctxt)
 		dev_err(&pdev->dev, "%s: error creating rx logging context",
 								__func__);
-
+#endif
 	memset(name, 0, sizeof(name));
 	scnprintf(name, sizeof(name), "%s%s", dev_name(msm_uport->uport.dev),
 									"_pwr");
+#ifdef CONFIG_IPC_LOGGING
 	msm_uport->ipc_msm_hs_pwr_ctxt = ipc_log_context_create(
 					IPC_MSM_HS_LOG_USER_PAGES, name, 0);
 	if (!msm_uport->ipc_msm_hs_pwr_ctxt)
 		dev_err(&pdev->dev, "%s: error creating usr logging context",
 								__func__);
-
+#endif
 	uport->irq = core_irqres;
 	msm_uport->bam_irq = bam_irqres;
 

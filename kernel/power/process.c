@@ -20,6 +20,7 @@
 #include <trace/events/power.h>
 #include <linux/wakeup_reason.h>
 #include <linux/cpuset.h>
+#include <linux/cpufreq.h>
 
 /*
  * Timeout for stopping processes
@@ -146,9 +147,9 @@ int freeze_processes(void)
 	error = try_to_freeze_tasks(true);
 	if (!error) {
 		__usermodehelper_set_disable_depth(UMH_DISABLED);
-		pr_cont("done.");
+		pr_debug("done.");
 	}
-	pr_cont("\n");
+	pr_debug("\n");
 	BUG_ON(in_atomic());
 
 	/*
@@ -181,14 +182,39 @@ int freeze_kernel_threads(void)
 	pm_nosig_freezing = true;
 	error = try_to_freeze_tasks(false);
 	if (!error)
-		pr_cont("done.");
+		pr_debug("done.");
 
-	pr_cont("\n");
+	pr_debug("\n");
 	BUG_ON(in_atomic());
 
 	if (error)
 		thaw_kernel_threads();
 	return error;
+}
+
+/*huruihuan add for speed up resume*/
+void thaw_fingerprintd(void)
+{
+       struct task_struct *g, *p;
+       struct task_struct *curr = current;
+
+       pm_freezing = false;
+       pm_nosig_freezing = false;
+       if (fp_irq_cnt) {
+               fp_irq_cnt = false;
+       }
+       read_lock(&tasklist_lock);
+       for_each_process_thread(g, p) {
+       /* No other threads should have PF_SUSPEND_TASK set */
+       WARN_ON((p != curr) && (p->flags & PF_SUSPEND_TASK));
+       if (!memcmp(p->comm, "fingerprintd", 13))
+               __thaw_task(p);
+       if (!memcmp(p->comm, "fingerprintmsg", 15))
+               __thaw_task(p);
+       }
+       read_unlock(&tasklist_lock);
+       pm_freezing = true;
+       pm_nosig_freezing = true;
 }
 
 void thaw_processes(void)
@@ -225,7 +251,7 @@ void thaw_processes(void)
 	usermodehelper_enable();
 
 	schedule();
-	pr_cont("done.\n");
+	pr_debug("done.\n");
 	trace_suspend_resume(TPS("thaw_processes"), 0, false);
 }
 
@@ -246,5 +272,5 @@ void thaw_kernel_threads(void)
 	read_unlock(&tasklist_lock);
 
 	schedule();
-	pr_cont("done.\n");
+	pr_debug("done.\n");
 }

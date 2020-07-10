@@ -32,9 +32,11 @@
 #include <linux/device.h>
 #include <linux/efi.h>
 #include <linux/fb.h>
+#include <linux/sched.h>
+#include <linux/cpufreq.h>
+#include <linux/pm_wakeup.h>
 
 #include <asm/fb.h>
-
 
     /*
      *  Frame buffer device initialization and setup routines

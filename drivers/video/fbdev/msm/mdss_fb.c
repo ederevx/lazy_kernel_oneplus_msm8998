@@ -46,6 +46,7 @@
 #include <linux/file.h>
 #include <linux/kthread.h>
 #include <linux/dma-buf.h>
+#include <linux/devfreq_boost.h>
 #include <sync.h>
 #include <sw_sync.h>
 
@@ -55,6 +56,10 @@
 #include "mdss_debug.h"
 #include "mdss_smmu.h"
 #include "mdss_mdp.h"
+
+#ifdef CONFIG_KLAPSE
+#include <linux/klapse.h>
+#endif
 
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
 #define MDSS_FB_NUM 3
@@ -81,6 +86,15 @@
  * Default value is set to 1 sec.
  */
 #define MDP_TIME_PERIOD_CALC_FPS_US	1000000
+
+#define MDSS_BRIGHT_TO_BL_DIM(out, v) do {\
+			out = (12*v*v+1393*v+3060)/4465;\
+			} while (0)
+bool backlight_dimmer = false;
+module_param(backlight_dimmer, bool, 0644);
+
+int backlight_min = 0;
+module_param(backlight_min, int, 0644);
 
 static struct fb_info *fbi_list[MAX_FBI_LIST];
 static int fbi_list_index;
@@ -287,10 +301,18 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 	if (value > mfd->panel_info->brightness_max)
 		value = mfd->panel_info->brightness_max;
 
-	/* This maps android backlight level 0 to 255 into
-	   driver backlight level 0 to bl_max with rounding */
-	MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
-				mfd->panel_info->brightness_max);
+	// Boeffla: apply min limits for LCD backlight (0 is exception for display off)
+	if (value != 0 && value < backlight_min)
+		value = backlight_min;
+
+	if (backlight_dimmer) {
+		MDSS_BRIGHT_TO_BL_DIM(bl_lvl, value);
+	} else {
+		/* This maps android backlight level 0 to 255 into
+		   driver backlight level 0 to bl_max with rounding */
+		MDSS_BRIGHT_TO_BL(bl_lvl, value, mfd->panel_info->bl_max,
+					mfd->panel_info->brightness_max);
+	}
 
 	if (!bl_lvl && value)
 		bl_lvl = 1;
@@ -302,6 +324,10 @@ static void mdss_fb_set_bl_brightness(struct led_classdev *led_cdev,
 		mutex_unlock(&mfd->bl_lock);
 	}
 	mfd->bl_level_usr = bl_lvl;
+
+#ifdef CONFIG_KLAPSE
+	set_rgb_slider(bl_lvl);
+#endif
 }
 
 static enum led_brightness mdss_fb_get_bl_brightness(
@@ -886,6 +912,296 @@ end:
 	return len;
 }
 
+static ssize_t mdss_fb_get_hbm_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_HBM_MODE,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "HBM mode = %d\n"
+	                                        "0-->HBM OFF\n"
+					                        "1-->HBM ON\n", level);
+	return ret;
+}
+
+static ssize_t mdss_fb_set_hbm_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+    rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_HBM_MODE,
+	    (void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set HBM Mode = %d \n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(hbm, S_IRUGO | S_IWUSR,
+mdss_fb_get_hbm_mode, mdss_fb_set_hbm_mode);
+
+static ssize_t mdss_fb_get_srgb_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_SRGB_MODE,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "mode = %d\n"
+							"0-->sRGB Mode OFF\n"
+							"1-->sRGB Mode ON\n",
+							level);
+	return ret;
+}
+
+static ssize_t mdss_fb_set_srgb_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+	rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_SRGB_MODE,
+		(void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set sRGB mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(SRGB, S_IRUGO | S_IWUSR,
+	mdss_fb_get_srgb_mode, mdss_fb_set_srgb_mode);
+
+
+static ssize_t mdss_fb_get_adobe_rgb_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd,
+		MDSS_EVENT_PANEL_GET_ADOBE_RGB_MODE, NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "mode = %d\n"
+					"0-->Adobe RGB Mode OFF\n"
+					"1-->Adobe RGB Mode ON\n",
+					level);
+	return ret;
+}
+
+static ssize_t mdss_fb_set_adobe_rgb_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+	rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_ADOBE_RGB_MODE,
+		(void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set Adobe RGB mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(Adobe_RGB, S_IRUGO | S_IWUSR,
+	mdss_fb_get_adobe_rgb_mode, mdss_fb_set_adobe_rgb_mode);
+
+static ssize_t mdss_fb_get_dci_p3_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_DCI_P3_MODE,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "mode = %d\n"
+						"0-->DCI-P3 Mode OFF\n"
+						"1-->DCI-P3 Mode ON\n",
+						level);
+	return ret;
+}
+
+static ssize_t mdss_fb_set_dci_p3_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+	rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_DCI_P3_MODE,
+		(void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set DCI P3 mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(DCI_P3, S_IRUGO | S_IWUSR,
+	mdss_fb_get_dci_p3_mode, mdss_fb_set_dci_p3_mode);
+
+static ssize_t mdss_fb_get_night_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_NIGHT_MODE,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "mode = %d\n"
+							"0-->Night Mode OFF\n"
+							"1-->Night Mode ON\n",
+							level);
+	return ret;
+}
+
+static ssize_t mdss_fb_set_night_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+	rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_NIGHT_MODE,
+		(void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set Night mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(night_mode, S_IRUGO | S_IWUSR,
+	mdss_fb_get_night_mode, mdss_fb_set_night_mode);
+
+static ssize_t mdss_fb_get_oneplus_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_GET_ONEPLUS_MODE,
+			NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "mode = %d\n"
+						"0-->Oneplus Mode OFF\n"
+						"1-->Oneplus Mode ON\n",
+						level);
+	return ret;
+}
+
+static ssize_t mdss_fb_set_oneplus_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+	rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_ONEPLUS_MODE,
+		(void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set Oneplus mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(oneplus_mode, S_IRUGO | S_IWUSR,
+	mdss_fb_get_oneplus_mode, mdss_fb_set_oneplus_mode);
+
+static ssize_t mdss_fb_get_adaption_mode(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int ret = 0;
+	int level = 0;
+
+	level = mdss_fb_send_panel_event(mfd,
+		MDSS_EVENT_PANEL_GET_ADAPTION_MODE, NULL);
+	ret = scnprintf(buf, PAGE_SIZE, "mode = %d\n"
+						"0-->Adaption Mode OFF\n"
+						"1-->Adaption Mode ON\n",
+						level);
+	return ret;
+}
+
+static ssize_t mdss_fb_set_adaption_mode(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t count)
+{
+	struct fb_info *fbi = dev_get_drvdata(dev);
+	struct msm_fb_data_type *mfd = fbi->par;
+	int rc = 0;
+	int level = 0;
+
+	rc = kstrtoint(buf, 10, &level);
+	if (rc) {
+		pr_err("kstrtoint failed. rc=%d\n", rc);
+		return rc;
+	}
+	rc = mdss_fb_send_panel_event(mfd, MDSS_EVENT_PANEL_SET_ADAPTION_MODE,
+		(void *)(unsigned long)level);
+	if (rc)
+		pr_err("Fail to set Adaption mode: %d\n", level);
+
+	return count;
+}
+
+static DEVICE_ATTR(adaption_mode, S_IRUGO | S_IWUSR,
+	mdss_fb_get_adaption_mode, mdss_fb_set_adaption_mode);
+
+/* #endif */
+
+
 static ssize_t mdss_fb_get_persist_mode(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
@@ -947,6 +1263,16 @@ static struct attribute *mdss_fb_attrs[] = {
 	&dev_attr_msm_fb_panel_status.attr,
 	&dev_attr_msm_fb_dfps_mode.attr,
 	&dev_attr_measured_fps.attr,
+	&dev_attr_SRGB.attr,
+	&dev_attr_hbm.attr,
+	&dev_attr_Adobe_RGB.attr,
+
+	&dev_attr_DCI_P3.attr,
+
+	&dev_attr_night_mode.attr,
+	&dev_attr_adaption_mode.attr,
+	&dev_attr_oneplus_mode.attr,
+/* #endif */
 	&dev_attr_msm_fb_persist_mode.attr,
 	&dev_attr_idle_power_collapse.attr,
 	NULL,
@@ -1679,6 +2005,7 @@ static struct platform_driver mdss_fb_driver = {
 		.name = "mdss_fb",
 		.of_match_table = mdss_fb_dt_match,
 		.pm = &mdss_fb_pm_ops,
+		.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	},
 };
 
@@ -1802,7 +2129,7 @@ static int mdss_fb_start_disp_thread(struct msm_fb_data_type *mfd)
 	mdss_fb_get_split(mfd);
 
 	atomic_set(&mfd->commits_pending, 0);
-	mfd->disp_thread = kthread_run(__mdss_fb_display_thread,
+	mfd->disp_thread = kthread_run_perf_critical(__mdss_fb_display_thread,
 				mfd, "mdss_fb%d", mfd->index);
 
 	if (IS_ERR(mfd->disp_thread)) {
@@ -2998,8 +3325,10 @@ static int __mdss_fb_wait_for_fence_sub(struct msm_sync_pt_data *sync_pt_data,
 				wait_ms = min_t(long, WAIT_FENCE_FINAL_TIMEOUT,
 						wait_ms);
 
+#ifdef CONFIG_SYNC_DEBUG
 			pr_warn("%s: sync_fence_wait timed out! ",
 					fences[i]->name);
+#endif
 			pr_cont("Waiting %ld.%ld more seconds\n",
 				(wait_ms/MSEC_PER_SEC), (wait_ms%MSEC_PER_SEC));
 
@@ -4663,9 +4992,9 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 	int ret, i = 0, j = 0, rc;
 	struct mdp_layer_commit  commit;
 	u32 buffer_size, layer_count;
-	struct mdp_input_layer *layer, *layer_list = NULL;
+	struct mdp_input_layer *layer, layer_list[MAX_LAYER_COUNT];
 	struct mdp_input_layer __user *input_layer_list;
-	struct mdp_output_layer *output_layer = NULL;
+	struct mdp_output_layer output_layer;
 	struct mdp_output_layer __user *output_layer_user;
 	struct mdp_destination_scaler_data *ds_data = NULL;
 	struct mdp_destination_scaler_data __user *ds_data_user;
@@ -4702,20 +5031,13 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 
 	output_layer_user = commit.commit_v1.output_layer;
 	if (output_layer_user) {
-		buffer_size = sizeof(struct mdp_output_layer);
-		output_layer = kzalloc(buffer_size, GFP_KERNEL);
-		if (!output_layer) {
-			pr_err("unable to allocate memory for output layer\n");
-			return -ENOMEM;
-		}
-
-		ret = copy_from_user(output_layer,
-			output_layer_user, buffer_size);
+		ret = copy_from_user(&output_layer, output_layer_user,
+				     sizeof(output_layer));
 		if (ret) {
 			pr_err("layer list copy from user failed\n");
 			goto err;
 		}
-		commit.commit_v1.output_layer = output_layer;
+		commit.commit_v1.output_layer = &output_layer;
 	}
 
 	layer_count = commit.commit_v1.input_layer_cnt;
@@ -4727,13 +5049,6 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 		goto err;
 	} else if (layer_count) {
 		buffer_size = sizeof(struct mdp_input_layer) * layer_count;
-		layer_list = kzalloc(buffer_size, GFP_KERNEL);
-		if (!layer_list) {
-			pr_err("unable to allocate memory for layers\n");
-			ret = -ENOMEM;
-			goto err;
-		}
-
 		ret = copy_from_user(layer_list, input_layer_list, buffer_size);
 		if (ret) {
 			pr_err("layer list copy from user failed\n");
@@ -4816,7 +5131,7 @@ static int mdss_fb_atomic_commit_ioctl(struct fb_info *info,
 
 	if (output_layer_user) {
 		rc = copy_to_user(&output_layer_user->buffer.fence,
-			&output_layer->buffer.fence,
+			&output_layer.buffer.fence,
 			sizeof(int));
 
 		if (rc)
@@ -4829,8 +5144,7 @@ err:
 		layer_list[i].scale = NULL;
 		mdss_mdp_free_layer_pp_info(&layer_list[i]);
 	}
-	kfree(layer_list);
-	kfree(output_layer);
+
 	if (ds_data) {
 		for (i = 0; i < commit.commit_v1.dest_scaler_cnt; i++)
 			kfree(to_user_ptr(ds_data[i].scale));
@@ -5066,6 +5380,7 @@ int mdss_fb_do_ioctl(struct fb_info *info, unsigned int cmd,
 		ret = mdss_fb_mode_switch(mfd, dsi_mode);
 		break;
 	case MSMFB_ATOMIC_COMMIT:
+		devfreq_boost_kick(DEVFREQ_MSM_CPUBW);
 		ret = mdss_fb_atomic_commit_ioctl(info, argp, file);
 		break;
 

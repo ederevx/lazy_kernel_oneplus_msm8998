@@ -227,7 +227,7 @@ static void event_handler(uint32_t opcode,
 				atomic_inc(&prtd->in_count);
 			}
 			if (atomic_read(&prtd->in_count) == prtd->periods) {
-				pr_info("%s: reclaimed all bufs\n", __func__);
+				pr_debug("%s: reclaimed all bufs\n", __func__);
 				if (atomic_read(&prtd->start))
 					snd_pcm_period_elapsed(substream);
 				wake_up(&the_locks.read_wait);
@@ -945,8 +945,8 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 	int xfer;
 	char *bufptr;
 	void *data = NULL;
-	static uint32_t idx;
-	static uint32_t size;
+	uint32_t idx;
+	uint32_t size;
 	uint32_t offset = 0;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct msm_audio *prtd = substream->runtime->private_data;

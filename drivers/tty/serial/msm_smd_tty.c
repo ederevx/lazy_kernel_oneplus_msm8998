@@ -368,9 +368,6 @@ static int smd_tty_dummy_probe(struct platform_device *pdev)
 	int n;
 
 	for (n = 0; n < MAX_SMD_TTYS; ++n) {
-		if (!smd_tty[n].dev_name)
-			continue;
-
 		if (pdev->id == smd_tty[n].edge &&
 			!strcmp(pdev->name, smd_tty[n].dev_name)) {
 			complete_all(&smd_tty[n].ch_allocated);
@@ -502,7 +499,7 @@ static int smd_tty_port_activate(struct tty_port *tport,
 	struct smd_tty_info *info;
 	const char *peripheral = NULL;
 
-	if (n >= MAX_SMD_TTYS || !smd_tty[n].ch_name)
+	if (n >= MAX_SMD_TTYS)
 		return -ENODEV;
 
 	info = smd_tty + n;
@@ -832,10 +829,12 @@ static struct notifier_block smd_tty_pm_nb = {
  */
 static void smd_tty_log_init(void)
 {
+#ifdef CONFIG_IPC_LOGGING
 	smd_tty_log_ctx = ipc_log_context_create(SMD_TTY_LOG_PAGES,
 						"smd_tty", 0);
 	if (!smd_tty_log_ctx)
 		pr_err("%s: Unable to create IPC log", __func__);
+#endif
 }
 
 static struct tty_driver *smd_tty_driver;

@@ -1353,7 +1353,7 @@ int msm_cam_sensor_handle_reg_gpio(int seq_val,
 	CDBG("%s: %d GPIO offset: %d, seq_val: %d\n", __func__, __LINE__,
 		gpio_offset, seq_val);
 
-	if ((gconf->gpio_num_info->valid[gpio_offset] == 1)) {
+	if (gconf->gpio_num_info->valid[gpio_offset] == 1) {
 		gpio_set_value_cansleep(
 			gconf->gpio_num_info->gpio_num
 			[gpio_offset], val);
@@ -1464,7 +1464,7 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 		switch (power_setting->seq_type) {
 		case SENSOR_CLK:
 			if (power_setting->seq_val >= ctrl->clk_info_size) {
-				pr_err("%s clk index %d >= max %zu\n", __func__,
+				pr_err_ratelimited("%s clk index %d >= max %zu\n", __func__,
 					power_setting->seq_val,
 					ctrl->clk_info_size);
 				goto power_up_failed;
@@ -1476,7 +1476,7 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 				ctrl->clk_info, ctrl->clk_ptr,
 				ctrl->clk_info_size, true);
 			if (rc < 0) {
-				pr_err("%s: clk enable failed\n", __func__);
+				pr_err_ratelimited("%s: clk enable failed\n", __func__);
 				goto power_up_failed;
 			}
 			break;
@@ -1559,7 +1559,7 @@ int msm_camera_power_up(struct msm_camera_power_ctrl_t *ctrl,
 	CDBG("%s exit\n", __func__);
 	return 0;
 power_up_failed:
-	pr_err("%s:%d failed\n", __func__, __LINE__);
+	pr_err_ratelimited("%s:%d failed\n", __func__, __LINE__);
 	for (index--; index >= 0; index--) {
 		CDBG("%s index %d\n", __func__, index);
 		power_setting = &ctrl->power_setting[index];

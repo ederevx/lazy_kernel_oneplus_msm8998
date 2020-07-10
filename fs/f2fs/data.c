@@ -1751,7 +1751,8 @@ static int f2fs_mpage_readpages(struct address_space *mapping,
 			prefetchw(&page->flags);
 			list_del(&page->lru);
 			if (add_to_page_cache_lru(page, mapping,
-						  page_index(page), GFP_KERNEL))
+						  page_index(page),
+						  readahead_gfp_mask(mapping)))
 				goto next_page;
 		}
 
@@ -2318,8 +2319,7 @@ continue_unlock:
 					ret = 0;
 					if (wbc->sync_mode == WB_SYNC_ALL) {
 						cond_resched();
-						congestion_wait(BLK_RW_ASYNC,
-									HZ/50);
+						congestion_wait(BLK_RW_ASYNC, msecs_to_jiffies(6));
 						goto retry_write;
 					}
 					continue;
