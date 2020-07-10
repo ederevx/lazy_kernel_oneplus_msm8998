@@ -199,9 +199,9 @@ enum tsens_tm_trip_type {
 #define TSENS_TM_WRITABLE_TRIPS_MASK ((1 << TSENS_TM_TRIP_NUM) - 1)
 
 struct tsens_thrshld_state {
-	enum thermal_device_mode	high_th_state;
-	enum thermal_device_mode	low_th_state;
-	enum thermal_device_mode	crit_th_state;
+	int				high_th_state;
+	int				low_th_state;
+	int				crit_th_state;
 	unsigned int			high_adc_code;
 	unsigned int			low_adc_code;
 	int				high_temp;
@@ -321,6 +321,7 @@ static struct of_device_id tsens_match[] = {
 	},
 	{}
 };
+
 
 static struct tsens_tm_device *tsens_controller_is_present(void)
 {
@@ -773,7 +774,7 @@ static int msm_tsens_get_temp(int sensor_client_id, int *temp)
 	}
 
 	if ((!tmdev->prev_reading_avail) && !tmdev->tsens_valid_status_check) {
-		while (!((readl_relaxed_no_log(trdy_addr)) & TSENS_TRDY_MASK))
+		while (!((readl_relaxed(trdy_addr)) & TSENS_TRDY_MASK))
 			usleep_range(TSENS_TRDY_RDY_MIN_TIME,
 				TSENS_TRDY_RDY_MAX_TIME);
 		tmdev->prev_reading_avail = true;
@@ -784,7 +785,7 @@ static int msm_tsens_get_temp(int sensor_client_id, int *temp)
 	else
 		last_temp_mask = TSENS_SN_STATUS_TEMP_MASK;
 
-	code = readl_relaxed_no_log(sensor_addr +
+	code = readl_relaxed(sensor_addr +
 			(sensor_hw_num << TSENS_STATUS_ADDR_OFFSET));
 	last_temp = code & last_temp_mask;
 
@@ -796,14 +797,14 @@ static int msm_tsens_get_temp(int sensor_client_id, int *temp)
 		if (code & valid_status_mask)
 			last_temp_valid = true;
 		else {
-			code = readl_relaxed_no_log(sensor_addr +
+			code = readl_relaxed(sensor_addr +
 				(sensor_hw_num << TSENS_STATUS_ADDR_OFFSET));
 			last_temp2 = code & last_temp_mask;
 			if (code & valid_status_mask) {
 				last_temp = last_temp2;
 				last_temp2_valid = true;
 			} else {
-				code = readl_relaxed_no_log(sensor_addr +
+				code = readl_relaxed(sensor_addr +
 					(sensor_hw_num <<
 					TSENS_STATUS_ADDR_OFFSET));
 				last_temp3 = code & last_temp_mask;
@@ -862,12 +863,16 @@ static int tsens_tz_get_temp(struct thermal_zone_device *thermal,
 		return -EINVAL;
 
 	tmdev = tm_sensor->tm;
+
 	if (!tmdev)
 		return -EINVAL;
 
 	rc = msm_tsens_get_temp(tm_sensor->sensor_client_id, temp);
 	if (rc)
 		return rc;
+
+	if (tm_sensor->sensor_hw_num < 0 || tm_sensor->sensor_hw_num > 15)
+		return 0;
 
 	idx = tmdev->sensor_dbg_info[tm_sensor->sensor_hw_num].idx;
 	tmdev->sensor_dbg_info[tm_sensor->sensor_hw_num].temp[idx%10] = *temp;
@@ -1416,6 +1421,9 @@ static void tsens_poll(struct work_struct *work)
 
 	if (tmdev->tsens_critical_poll) {
 		msleep(TSENS_DEBUG_POLL_MS);
+		/* Read sensor_status */
+		mb();
+
 		sensor_status_addr = TSENS_TM_SN_STATUS(tmdev->tsens_addr);
 
 		spin_lock_irqsave(&tmdev->tsens_crit_lock, flags);

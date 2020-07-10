@@ -53,6 +53,7 @@
 #include <linux/time.h>
 #include <linux/backing-dev.h>
 #include <linux/sort.h>
+#include <linux/binfmts.h>
 
 #include <asm/uaccess.h>
 #include <linux/atomic.h>
@@ -132,6 +133,13 @@ struct cpuset {
 	/* for custom sched domain */
 	int relax_domain_level;
 };
+
+#ifdef CONFIG_CPUSETS_ASSIST
+struct cs_target {
+	const char *name;
+	char *cpus;
+};
+#endif
 
 static inline struct cpuset *css_cs(struct cgroup_subsys_state *css)
 {
@@ -852,6 +860,20 @@ void rebuild_sched_domains(void)
 	put_online_cpus();
 }
 
+static int update_cpus_allowed(struct cpuset *cs, struct task_struct *p,
+			       const struct cpumask *new_mask)
+{
+	int ret;
+
+	if (cpumask_subset(&p->cpus_requested, cs->cpus_requested)) {
+		ret = set_cpus_allowed_ptr(p, &p->cpus_requested);
+		if (!ret)
+			return ret;
+	}
+
+	return set_cpus_allowed_ptr(p, new_mask);
+}
+
 /**
  * update_tasks_cpumask - Update the cpumasks of tasks in the cpuset.
  * @cs: the cpuset in which each task's cpus_allowed mask needs to be changed
@@ -867,7 +889,7 @@ static void update_tasks_cpumask(struct cpuset *cs)
 
 	css_task_iter_start(&cs->css, &it);
 	while ((task = css_task_iter_next(&it)))
-		set_cpus_allowed_ptr(task, cs->effective_cpus);
+		update_cpus_allowed(cs, task, cs->effective_cpus);
 	css_task_iter_end(&it);
 }
 
@@ -1051,15 +1073,6 @@ static void cpuset_change_task_nodemask(struct task_struct *tsk,
 					nodemask_t *newmems)
 {
 	bool need_loop;
-
-	/*
-	 * Allow tasks that have access to memory reserves because they have
-	 * been OOM killed to get memory anywhere.
-	 */
-	if (unlikely(test_thread_flag(TIF_MEMDIE)))
-		return;
-	if (current->flags & PF_EXITING) /* Let dying task have memory */
-		return;
 
 	task_lock(tsk);
 	/*
@@ -1556,7 +1569,7 @@ static void cpuset_attach(struct cgroup_taskset *tset)
 		 * can_attach beforehand should guarantee that this doesn't
 		 * fail.  TODO: have a better way to handle failure here
 		 */
-		WARN_ON_ONCE(set_cpus_allowed_ptr(task, cpus_attach));
+		WARN_ON_ONCE(update_cpus_allowed(cs, task, cpus_attach));
 
 		cpuset_change_task_nodemask(task, &cpuset_attach_nodemask_to);
 		cpuset_update_task_spread_flag(cs, task);
@@ -1702,8 +1715,6 @@ static ssize_t cpuset_write_resmask(struct kernfs_open_file *of,
 	struct cpuset *trialcs;
 	int retval = -ENODEV;
 
-	buf = strstrip(buf);
-
 	/*
 	 * CPU or memory hotunplug may leave @cs w/o any execution
 	 * resources, in which case the hotplug code asynchronously updates
@@ -1758,6 +1769,47 @@ out_unlock:
 	css_put(&cs->css);
 	flush_workqueue(cpuset_migrate_mm_wq);
 	return retval ?: nbytes;
+}
+
+static ssize_t cpuset_write_resmask_assist(struct kernfs_open_file *of,
+					   struct cs_target tgt, size_t nbytes,
+					   loff_t off)
+{
+	pr_info("cpuset_assist: setting %s to %s\n", tgt.name, tgt.cpus);
+	return cpuset_write_resmask(of, tgt.cpus, nbytes, off);
+}
+
+static ssize_t cpuset_write_resmask_wrapper(struct kernfs_open_file *of,
+					 char *buf, size_t nbytes, loff_t off)
+{
+#ifdef CONFIG_CPUSETS_ASSIST
+	static struct cs_target cs_targets[] = {
+		{ "audio-app",		"0-3,6-7" },
+		{ "background",		"0-1" },
+		{ "camera-daemon",	"0-3,6-7" },
+		{ "foreground",		"0-3,6-7" },
+		{ "restricted",		"0-3" },
+		{ "system-background",	"0-3" },
+		{ "top-app",		"0-7" },
+	};
+
+	struct cpuset *cs = css_cs(of_css(of));
+	int i;
+
+	if (task_is_booster(current)) {
+		for (i = 0; i < ARRAY_SIZE(cs_targets); i++) {
+			struct cs_target tgt = cs_targets[i];
+
+			if (!strcmp(cs->css.cgroup->kn->name, tgt.name))
+				return cpuset_write_resmask_assist(of, tgt,
+								   nbytes, off);
+		}
+	}
+#endif
+
+	buf = strstrip(buf);
+
+	return cpuset_write_resmask(of, buf, nbytes, off);
 }
 
 /*
@@ -1852,7 +1904,7 @@ static struct cftype files[] = {
 	{
 		.name = "cpus",
 		.seq_show = cpuset_common_seq_show,
-		.write = cpuset_write_resmask,
+		.write = cpuset_write_resmask_wrapper,
 		.max_write_len = (100U + 6 * NR_CPUS),
 		.private = FILE_CPULIST,
 	},
@@ -2108,6 +2160,24 @@ static void cpuset_bind(struct cgroup_subsys_state *root_css)
 	mutex_unlock(&cpuset_mutex);
 }
 
+
+static int cpuset_allow_attach(struct cgroup_subsys_state *css,
+			       struct cgroup_taskset *tset)
+{
+	const struct cred *cred = current_cred(), *tcred;
+	struct task_struct *task;
+
+	cgroup_taskset_for_each(task, css, tset) {
+		tcred = __task_cred(task);
+
+		if ((current != task) && !capable(CAP_SYS_ADMIN) &&
+		    cred->euid.val != tcred->uid.val && cred->euid.val != tcred->suid.val)
+			return -EACCES;
+	}
+
+	return 0;
+}
+
 /*
  * Make sure the new task conform to the current state of its parent,
  * which could have been changed by cpuset just after it inherits the
@@ -2128,6 +2198,7 @@ struct cgroup_subsys cpuset_cgrp_subsys = {
 	.css_offline	= cpuset_css_offline,
 	.css_free	= cpuset_css_free,
 	.can_attach	= cpuset_can_attach,
+	.allow_attach   = cpuset_allow_attach,
 	.cancel_attach	= cpuset_cancel_attach,
 	.attach		= cpuset_attach,
 	.post_attach	= cpuset_post_attach,
@@ -2399,13 +2470,7 @@ void cpuset_update_active_cpus(bool cpu_online)
 	 * We're inside cpu hotplug critical region which usually nests
 	 * inside cgroup synchronization.  Bounce actual hotplug processing
 	 * to a work item to avoid reverse locking order.
-	 *
-	 * We still need to do partition_sched_domains() synchronously;
-	 * otherwise, the scheduler will get confused and put tasks to the
-	 * dead CPU.  Fall back to the default single domain.
-	 * cpuset_hotplug_workfn() will rebuild it as necessary.
 	 */
-	partition_sched_domains(1, NULL, NULL);
 	schedule_work(&cpuset_hotplug_work);
 }
 

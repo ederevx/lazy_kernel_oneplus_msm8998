@@ -11,6 +11,61 @@
  *
  */
 
+#define trace_kgsl_active_count(...) {}
+#define trace_kgsl_bus(...) {}
+#define trace_kgsl_buslevel(...) {}
+#define trace_kgsl_clk(...) {}
+#define trace_kgsl_clock_throttling(...) {}
+#define trace_kgsl_constraint(...) {}
+#define trace_kgsl_context_create(...) {}
+#define trace_kgsl_context_destroy(...) {}
+#define trace_kgsl_context_detach(...) {}
+#define trace_kgsl_fire_event(...) {}
+#define trace_kgsl_gmu_oob_clear(...) {}
+#define trace_kgsl_gmu_oob_set(...) {}
+#define trace_kgsl_gpubusy(...) {}
+#define trace_kgsl_hfi_receive(...) {}
+#define trace_kgsl_hfi_send(...) {}
+#define trace_kgsl_irq(...) {}
+#define trace_kgsl_issueibcmds(...) {}
+#define trace_kgsl_mem_alloc(...) {}
+#define trace_kgsl_mem_free(...) {}
+#define trace_kgsl_mem_map(...) {}
+#define trace_kgsl_mem_mmap(...) {}
+#define trace_kgsl_mem_sync_cache(...) {}
+#define trace_kgsl_mem_sync_full_cache(...) {}
+#define trace_kgsl_mem_timestamp_free(...) {}
+#define trace_kgsl_mem_timestamp_queue(...) {}
+#define trace_kgsl_mem_unmapped_area_collision(...) {}
+#define trace_kgsl_mmu_pagefault(...) {}
+#define trace_kgsl_msg(...) {}
+#define trace_kgsl_pagetable_destroy(...) {}
+#define trace_kgsl_popp_level(...) {}
+#define trace_kgsl_popp_mod(...) {}
+#define trace_kgsl_popp_nap(...) {}
+#define trace_kgsl_pwrlevel(...) {}
+#define trace_kgsl_pwr_request_state(...) {}
+#define trace_kgsl_pwr_set_state(...) {}
+#define trace_kgsl_pwrstats(...) {}
+#define trace_kgsl_rail(...) {}
+#define trace_kgsl_readtimestamp(...) {}
+#define trace_kgsl_register_event(...) {}
+#define trace_kgsl_regwrite(...) {}
+#define trace_kgsl_user_pwrlevel_constraint(...) {}
+#define trace_kgsl_waittimestamp_entry(...) {}
+#define trace_kgsl_waittimestamp_exit(...) {}
+#define trace_sparse_bind(...) {}
+#define trace_sparse_phys_alloc(...) {}
+#define trace_sparse_phys_free(...) {}
+#define trace_sparse_unbind(...) {}
+#define trace_sparse_virt_alloc(...) {}
+#define trace_sparse_virt_free(...) {}
+#define trace_syncpoint_fence(...) {}
+#define trace_syncpoint_fence_expire(...) {}
+#define trace_syncpoint_timestamp(...) {}
+#define trace_syncpoint_timestamp_expire(...) {}
+
+#if 0
 #if !defined(_KGSL_TRACE_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _KGSL_TRACE_H
 
@@ -946,33 +1001,39 @@ TRACE_EVENT(kgsl_popp_nap,
 );
 
 TRACE_EVENT(kgsl_register_event,
-		TP_PROTO(unsigned int id, unsigned int timestamp, void *func),
-		TP_ARGS(id, timestamp, func),
+		TP_PROTO(unsigned int id, unsigned int timestamp, void *func,
+			enum kgsl_priority prio),
+		TP_ARGS(id, timestamp, func, prio),
 		TP_STRUCT__entry(
 			__field(unsigned int, id)
 			__field(unsigned int, timestamp)
 			__field(void *, func)
+			__field(enum kgsl_priority, prio)
 		),
 		TP_fast_assign(
 			__entry->id = id;
 			__entry->timestamp = timestamp;
 			__entry->func = func;
+			__entry->prio = prio;
 		),
 		TP_printk(
-			"ctx=%u ts=%u cb=%pF",
-			__entry->id, __entry->timestamp, __entry->func)
+			"ctx=%u ts=%u cb=%pF prio=%s",
+			__entry->id, __entry->timestamp, __entry->func,
+			prio_to_string(__entry->prio))
 );
 
 TRACE_EVENT(kgsl_fire_event,
 		TP_PROTO(unsigned int id, unsigned int ts,
-			unsigned int type, unsigned int age, void *func),
-		TP_ARGS(id, ts, type, age, func),
+			unsigned int type, unsigned int age, void *func,
+			enum kgsl_priority prio),
+		TP_ARGS(id, ts, type, age, func, prio),
 		TP_STRUCT__entry(
 			__field(unsigned int, id)
 			__field(unsigned int, ts)
 			__field(unsigned int, type)
 			__field(unsigned int, age)
 			__field(void *, func)
+			__field(enum kgsl_priority, prio)
 		),
 		TP_fast_assign(
 			__entry->id = id;
@@ -980,12 +1041,14 @@ TRACE_EVENT(kgsl_fire_event,
 			__entry->type = type;
 			__entry->age = age;
 			__entry->func = func;
+			__entry->prio = prio;
 		),
 		TP_printk(
-			"ctx=%u ts=%u type=%s age=%u cb=%pF",
+			"ctx=%u ts=%u type=%s age=%u cb=%pF prio=%s",
 			__entry->id, __entry->ts,
 			__print_symbolic(__entry->type, KGSL_EVENT_TYPES),
-			__entry->age, __entry->func)
+			__entry->age, __entry->func,
+			prio_to_string(__entry->prio))
 );
 
 TRACE_EVENT(kgsl_active_count,
@@ -1233,3 +1296,4 @@ TRACE_EVENT(kgsl_clock_throttling,
 
 /* This part must be outside protection */
 #include <trace/define_trace.h>
+#endif

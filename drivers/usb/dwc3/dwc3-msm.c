@@ -89,6 +89,7 @@ MODULE_PARM_DESC(cpu_to_affin, "affin usb irq to this cpu");
 #define CGCTL_REG		(QSCRATCH_REG_OFFSET + 0x28)
 #define PWR_EVNT_IRQ_STAT_REG    (QSCRATCH_REG_OFFSET + 0x58)
 #define PWR_EVNT_IRQ_MASK_REG    (QSCRATCH_REG_OFFSET + 0x5C)
+#define QSCRATCH_USB30_STS_REG	(QSCRATCH_REG_OFFSET + 0xF8)
 
 #define PWR_EVNT_POWERDOWN_IN_P3_MASK		BIT(2)
 #define PWR_EVNT_POWERDOWN_OUT_P3_MASK		BIT(3)
@@ -1651,7 +1652,7 @@ static int msm_dwc3_usbdev_notify(struct notifier_block *self,
 	}
 
 	mdwc->hc_died = true;
-	queue_delayed_work(mdwc->sm_usb_wq, &mdwc->sm_work, 0);
+	queue_delayed_work(system_freezable_wq, &mdwc->sm_work, 0);
 	return 0;
 }
 
@@ -2015,8 +2016,19 @@ static int dwc3_msm_prepare_suspend(struct dwc3_msm *mdwc)
 			break;
 		usleep_range(20, 30);
 	}
-	if (!(reg & PWR_EVNT_LPM_IN_L2_MASK))
-		dev_err(mdwc->dev, "could not transition HS PHY to L2\n");
+	if (!(reg & PWR_EVNT_LPM_IN_L2_MASK)) {
+		dbg_event(0xFF, "PWR_EVNT_LPM",
+			dwc3_msm_read_reg(mdwc->base, PWR_EVNT_IRQ_STAT_REG));
+		dbg_event(0xFF, "QUSB_STS",
+			dwc3_msm_read_reg(mdwc->base, QSCRATCH_USB30_STS_REG));
+		/* Mark fatal error for host mode or USB bus suspend case */
+		if (mdwc->in_host_mode || (mdwc->vbus_active
+			&& mdwc->drd_state == DRD_STATE_PERIPHERAL_SUSPEND)) {
+			queue_work(mdwc->dwc3_wq, &mdwc->resume_work);
+			dev_err(mdwc->dev, "could not transition HS PHY to L2\n");
+			return -EBUSY;
+		}
+	}
 
 	/* Clear L2 event bit */
 	dwc3_msm_write_reg(mdwc->base, PWR_EVNT_IRQ_STAT_REG,
@@ -2153,6 +2165,12 @@ static int dwc3_msm_suspend(struct dwc3_msm *mdwc, bool hibernation)
 
 	/* Suspend SS PHY */
 	if (dwc->maximum_speed == USB_SPEED_SUPER) {
+		if (mdwc->in_host_mode) {
+			u32 reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
+
+			reg |= DWC3_GUSB3PIPECTL_DISRXDETU3;
+			dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
+		}
 		/* indicate phy about SS mode */
 		if (dwc3_msm_is_superspeed(mdwc))
 			mdwc->ss_phy->flags |= DEVICE_IN_SS_MODE;
@@ -2254,6 +2272,13 @@ static int dwc3_msm_resume(struct dwc3_msm *mdwc)
 
 	dev_dbg(mdwc->dev, "%s: exiting lpm\n", __func__);
 
+	/*
+	 * If h/w exited LPM without any events, ensure
+	 * h/w is reset before processing any new events.
+	 */
+	if (!mdwc->vbus_active && mdwc->id_state)
+		set_bit(WAIT_FOR_LPM, &mdwc->inputs);
+
 	mutex_lock(&mdwc->suspend_resume_mutex);
 	if (!atomic_read(&dwc->in_lpm)) {
 		dev_dbg(mdwc->dev, "%s: Already resumed\n", __func__);
@@ -2329,6 +2354,13 @@ static int dwc3_msm_resume(struct dwc3_msm *mdwc)
 		usb_phy_set_suspend(mdwc->ss_phy, 0);
 		mdwc->ss_phy->flags &= ~DEVICE_IN_SS_MODE;
 		mdwc->lpm_flags &= ~MDWC3_SS_PHY_SUSPEND;
+
+		if (mdwc->in_host_mode) {
+			u32 reg = dwc3_readl(dwc->regs, DWC3_GUSB3PIPECTL(0));
+
+			reg &= ~DWC3_GUSB3PIPECTL_DISRXDETU3;
+			dwc3_writel(dwc->regs, DWC3_GUSB3PIPECTL(0), reg);
+		}
 	}
 
 	mdwc->hs_phy->flags &= ~(PHY_HSFS_MODE | PHY_LS_MODE);
@@ -2425,7 +2457,7 @@ static void dwc3_ext_event_notify(struct dwc3_msm *mdwc)
 	}
 
 	pm_stay_awake(mdwc->dev);
-	queue_delayed_work(mdwc->sm_usb_wq, &mdwc->sm_work, 0);
+	queue_delayed_work(system_freezable_wq, &mdwc->sm_work, 0);
 }
 
 static void dwc3_resume_work(struct work_struct *w)
@@ -3261,13 +3293,7 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 		goto err;
 	}
 
-	ret = of_platform_populate(node, NULL, NULL, &pdev->dev);
-	if (ret) {
-		dev_err(&pdev->dev,
-				"failed to add create dwc3 core\n");
-		of_node_put(dwc3_node);
-		goto err;
-	}
+	of_platform_device_create(dwc3_node, NULL, &pdev->dev);
 
 	mdwc->dwc3 = of_find_device_by_node(dwc3_node);
 	of_node_put(dwc3_node);
@@ -3323,6 +3349,8 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 	if (of_property_read_bool(node, "qcom,disable-dev-mode-pm"))
 		pm_runtime_get_noresume(mdwc->dev);
 
+	mutex_init(&mdwc->suspend_resume_mutex);
+
 	mdwc->check_for_float = of_property_read_bool(node,
 					"qcom,check-for-float");
 	ret = dwc3_msm_extcon_register(mdwc);
@@ -3345,7 +3373,6 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 			POWER_SUPPLY_PROP_PRESENT, &pval);
 	}
 
-	mutex_init(&mdwc->suspend_resume_mutex);
 	/* Update initial VBUS/ID state from extcon */
 	if (mdwc->extcon_vbus && extcon_get_cable_state_(mdwc->extcon_vbus,
 							EXTCON_USB))
@@ -3355,7 +3382,7 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 		dwc3_msm_id_notifier(&mdwc->id_nb, true, mdwc->extcon_id);
 	else if (!pval.intval) {
 		/* USB cable is not connected */
-		queue_delayed_work(mdwc->sm_usb_wq, &mdwc->sm_work, 0);
+		queue_delayed_work(system_freezable_wq, &mdwc->sm_work, 0);
 	} else {
 		if (pval.intval > 0)
 			dev_info(mdwc->dev, "charger detection in progress\n");
@@ -3387,7 +3414,6 @@ static int dwc3_msm_probe(struct platform_device *pdev)
 put_dwc3:
 	if (mdwc->bus_perf_client)
 		msm_bus_scale_unregister_client(mdwc->bus_perf_client);
-	of_platform_depopulate(&pdev->dev);
 err:
 	destroy_workqueue(mdwc->dwc3_wq);
 	return ret;
@@ -4134,7 +4160,7 @@ static void dwc3_otg_sm_work(struct work_struct *w)
 	}
 
 	if (work)
-		queue_delayed_work(mdwc->sm_usb_wq, &mdwc->sm_work, delay);
+		queue_delayed_work(system_freezable_wq, &mdwc->sm_work, delay);
 
 ret:
 	return;

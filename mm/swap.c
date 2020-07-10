@@ -40,7 +40,7 @@
 #include <trace/events/pagemap.h>
 
 /* How many pages do we try to swap or page in/out together? */
-int page_cluster;
+int page_cluster = 0;
 
 static DEFINE_PER_CPU(struct pagevec, lru_add_pvec);
 static DEFINE_PER_CPU(struct pagevec, lru_rotate_pvecs);
@@ -708,12 +708,12 @@ void add_page_to_unevictable_list(struct page *page)
  * directly back onto it's zone's unevictable list, it does NOT use a
  * per cpu pagevec.
  */
-void lru_cache_add_active_or_unevictable(struct page *page,
-					 struct vm_area_struct *vma)
+void __lru_cache_add_active_or_unevictable(struct page *page,
+					 unsigned long vma_flags)
 {
 	VM_BUG_ON_PAGE(PageLRU(page), page);
 
-	if (likely((vma->vm_flags & (VM_LOCKED | VM_SPECIAL)) != VM_LOCKED)) {
+	if (likely((vma_flags & (VM_LOCKED | VM_SPECIAL)) != VM_LOCKED)) {
 		SetPageActive(page);
 		lru_cache_add(page);
 		return;
@@ -1154,7 +1154,6 @@ EXPORT_SYMBOL(pagevec_lookup_range_nr_tag);
  */
 void __init swap_setup(void)
 {
-	unsigned long megs = totalram_pages >> (20 - PAGE_SHIFT);
 #ifdef CONFIG_SWAP
 	int i;
 
@@ -1162,11 +1161,6 @@ void __init swap_setup(void)
 		spin_lock_init(&swapper_spaces[i].tree_lock);
 #endif
 
-	/* Use a smaller cluster for small-memory machines */
-	if (megs < 16)
-		page_cluster = 2;
-	else
-		page_cluster = 3;
 	/*
 	 * Right now other parts of the system means that we
 	 * _really_ don't want to cluster much more

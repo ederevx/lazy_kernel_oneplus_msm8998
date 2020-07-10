@@ -26,6 +26,12 @@ SCHED_FEAT(NEXT_BUDDY, false)
 SCHED_FEAT(LAST_BUDDY, true)
 
 /*
+ * skip buddy i.e task called yield() is always skipped and the
+ * next entity is selected to run irrespective of the vruntime
+ */
+SCHED_FEAT(STRICT_SKIP_BUDDY, false)
+
+/*
  * Consider buddies to be cache hot, decreases the likelyness of a
  * cache buddy being migrated away, increases cache locality.
  */
@@ -49,7 +55,14 @@ SCHED_FEAT(NONTASK_CAPACITY, true)
  * Queue remote wakeups on the target CPU and process them
  * using the scheduler IPI. Reduces rq->lock contention/bounces.
  */
-SCHED_FEAT(TTWU_QUEUE, false)
+SCHED_FEAT(TTWU_QUEUE, true)
+
+/*
+ * Issue a WARN when we do multiple update_rq_clock() calls
+ * in a single rq->lock section. Default disabled because the
+ * annotations are not complete.
+ */
+SCHED_FEAT(WARN_DOUBLE_CLOCK, false)
 
 #ifdef HAVE_RT_PUSH_IPI
 /*
@@ -70,6 +83,12 @@ SCHED_FEAT(LB_MIN, false)
 SCHED_FEAT(ATTACH_AGE_LOAD, true)
 
 /*
+ * UtilEstimation. Use estimated CPU utilization.
+ */
+SCHED_FEAT(UTIL_EST, true)
+SCHED_FEAT(UTIL_EST_FASTUP, true)
+
+/*
  * Energy aware scheduling. Use platform energy model to guide scheduling
  * decisions optimizing for energy efficiency.
  */
@@ -78,3 +97,11 @@ SCHED_FEAT(ENERGY_AWARE, true)
 #else
 SCHED_FEAT(ENERGY_AWARE, false)
 #endif
+
+/*
+ * Minimum capacity capping. Keep track of minimum capacity factor when
+ * minimum frequency available to a policy is modified.
+ * If enabled, this can be used to inform the scheduler about capacity
+ * restrictions.
+ */
+SCHED_FEAT(MIN_CAPACITY_CAPPING, false)

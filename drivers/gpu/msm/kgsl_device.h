@@ -60,8 +60,7 @@ enum kgsl_event_results {
 	KGSL_EVENT_CANCELLED = 2,
 };
 
-#define KGSL_FLAG_WAKE_ON_TOUCH BIT(0)
-#define KGSL_FLAG_SPARSE        BIT(1)
+#define KGSL_FLAG_SPARSE        BIT(0)
 
 /*
  * "list" of event types for ftrace symbolic magic
@@ -88,8 +87,7 @@ enum kgsl_event_results {
 	{ KGSL_CONTEXT_TYPE_GL, "GL" }, \
 	{ KGSL_CONTEXT_TYPE_CL, "CL" }, \
 	{ KGSL_CONTEXT_TYPE_C2D, "C2D" }, \
-	{ KGSL_CONTEXT_TYPE_RS, "RS" }, \
-	{ KGSL_CONTEXT_TYPE_VK, "VK" }
+	{ KGSL_CONTEXT_TYPE_RS, "RS" }
 
 #define KGSL_CONTEXT_ID(_context) \
 	((_context != NULL) ? (_context)->id : KGSL_MEMSTORE_GLOBAL)
@@ -619,11 +617,16 @@ void kgsl_device_platform_remove(struct kgsl_device *device);
 
 const char *kgsl_pwrstate_to_str(unsigned int state);
 
-int kgsl_device_snapshot_init(struct kgsl_device *device);
-void kgsl_device_snapshot(struct kgsl_device *device,
-			struct kgsl_context *context);
-void kgsl_device_snapshot_close(struct kgsl_device *device);
 void kgsl_snapshot_save_frozen_objs(struct work_struct *work);
+
+static inline int kgsl_device_snapshot_init(struct kgsl_device *device)
+{
+	return 0;
+}
+static inline void kgsl_device_snapshot(struct kgsl_device *device,
+			struct kgsl_context *context) {}
+
+static inline void kgsl_device_snapshot_close(struct kgsl_device *device) {}
 
 void kgsl_events_init(void);
 void kgsl_events_exit(void);
@@ -646,8 +649,11 @@ bool kgsl_event_pending(struct kgsl_device *device,
 		kgsl_event_func func, void *priv);
 int kgsl_add_event(struct kgsl_device *device, struct kgsl_event_group *group,
 		unsigned int timestamp, kgsl_event_func func, void *priv);
+int kgsl_add_low_prio_event(struct kgsl_device *device,
+		struct kgsl_event_group *group, unsigned int timestamp,
+		kgsl_event_func func, void *priv);
 void kgsl_process_event_group(struct kgsl_device *device,
-	struct kgsl_event_group *group);
+		struct kgsl_event_group *group);
 void kgsl_flush_event_group(struct kgsl_device *device,
 		struct kgsl_event_group *group);
 void kgsl_process_event_groups(struct kgsl_device *device);

@@ -2,6 +2,14 @@ config ARCH
 	string
 	option env="ARCH"
 
+config VERSION
+	string
+	option env="VERSION"
+
+config PATCHLEVEL
+	string
+	option env="PATCHLEVEL"
+
 config KERNELVERSION
 	string
 	option env="KERNELVERSION"
@@ -89,7 +97,7 @@ config LOCALVERSION
 
 config LOCALVERSION_AUTO
 	bool "Automatically append version information to the version string"
-	default y
+	default n
 	help
 	  This will try to automatically determine if the current tree is a
 	  release tree by looking for git tags that belong to the current
@@ -905,6 +913,41 @@ config HAVE_UNSTABLE_SCHED_CLOCK
 config GENERIC_SCHED_CLOCK
 	bool
 
+menu "FAIR Scheuler tunables"
+
+choice
+	prompt "Utilization's PELT half-Life"
+	default PELT_UTIL_HALFLIFE_32
+	help
+	  Allows choosing one of the possible values for the PELT half-life to
+	  be used for the update of the utilization of tasks and CPUs.
+	  The half-life is the amount of [ms] required by the PELT signal to
+	  build up to 50% utilization. The higher the half-life the longer it
+	  takes for a task to be represented as a big one.
+
+	  If not sure, use the default of 32 ms.
+
+config PELT_UTIL_HALFLIFE_32
+	bool "32 ms, default for server"
+
+config PELT_UTIL_HALFLIFE_16
+	bool "16 ms, suggested for interactive workloads"
+	help
+	  Use 16ms as PELT half-life value. This will increase the ramp-up and
+	  decay of utlization and load twice as fast as for the default
+	  configuration using 32ms.
+
+config PELT_UTIL_HALFLIFE_8
+	bool "8 ms, very fast"
+	help
+	  Use 8ms as PELT half-life value. This will increase the ramp-up and
+	  decay of utlization and load four time as fast as for the default
+	  configuration using 32ms.
+
+endchoice
+
+endmenu # FAIR Scheduler tunables"
+
 #
 # For architectures that want to enable the support for NUMA-affine scheduler
 # balancing logic:
@@ -1218,33 +1261,6 @@ config CGROUP_WRITEBACK
 
 endif # CGROUPS
 
-config SCHED_HMP
-	bool "Scheduler support for heterogenous multi-processor systems"
-	depends on SMP && FAIR_GROUP_SCHED
-	help
-	  This feature will let the scheduler optimize task placement on
-	  systems made of heterogeneous cpus i.e cpus that differ either
-	  in their instructions per-cycle capability or the maximum
-	  frequency they can attain.
-
-config SCHED_HMP_CSTATE_AWARE
-	bool "CPU C-state aware scheduler"
-	depends on SCHED_HMP
-	help
-	  This feature will let the HMP scheduler optimize task placement
-	  with CPUs C-state. If this is enabled, scheduler places tasks
-	  onto the shallowest C-state CPU among the most power efficient CPUs.
-
-config SCHED_CORE_CTL
-	bool "QTI Core Control"
-	depends on SMP
-	help
-	  This options enables the core control functionality in
-	  the scheduler. Core control automatically offline and
-	  online cores based on cpu load and utilization.
-
-	  If unsure, say N here.
-
 config CHECKPOINT_RESTORE
 	bool "Checkpoint/restore support" if EXPERT
 	select PROC_CHILDREN
@@ -1353,6 +1369,24 @@ config SCHED_TUNE
 
 	  Since this support exposes a single system-wide knob, the specified
 	  boost value is applied to all (CFS) tasks in the system.
+
+	  If unsure, say N.
+
+config STUNE_ASSIST
+	bool "SchedTune configuration helper"
+	depends on SCHED_TUNE
+	depends on ANDROID
+	help
+	  This option enables in-kernel overrides for SchedTune values.
+
+	  If unsure, say N.
+
+config CPUSETS_ASSIST
+	bool "CPUSet configuration helper"
+	depends on CPUSETS
+	depends on ANDROID
+	help
+	  This option enables in-kernel overrides for cpuset values.
 
 	  If unsure, say N.
 
@@ -1496,8 +1530,6 @@ config BPF
 
 menuconfig EXPERT
 	bool "Configure standard kernel features (expert users)"
-	# Unhide debug options, to make the on-by-default options visible
-	select DEBUG_KERNEL
 	help
 	  This option allows certain base kernel options and settings
           to be disabled or tweaked. This is for specialized

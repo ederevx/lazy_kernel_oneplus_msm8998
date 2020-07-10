@@ -1352,7 +1352,7 @@ void *msm_vidc_open(int core_id, int session_type)
 		goto err_invalid_core;
 	}
 
-	pr_info(VIDC_DBG_TAG "Opening video instance: %pK, %d\n",
+	pr_debug(VIDC_DBG_TAG "Opening video instance: %pK, %d\n",
 		VIDC_MSG_PRIO2STRING(VIDC_INFO), inst, session_type);
 	mutex_init(&inst->sync_lock);
 	mutex_init(&inst->bufq[CAPTURE_PORT].lock);
@@ -1432,8 +1432,10 @@ void *msm_vidc_open(int core_id, int session_type)
 	list_add_tail(&inst->list, &core->instances);
 	mutex_unlock(&core->lock);
 
+#ifdef CONFIG_DEBUG_FS
 	inst->debugfs_root =
 		msm_vidc_debugfs_init_inst(inst, core->debugfs_root);
+#endif
 
 	return inst;
 fail_init:
@@ -1534,24 +1536,24 @@ int msm_vidc_destroy(struct msm_vidc_inst *inst)
 	mutex_destroy(&inst->bufq[OUTPUT_PORT].lock);
 	mutex_destroy(&inst->lock);
 
-	msm_vidc_debugfs_deinit_inst(inst);
+	debugfs_remove_recursive(inst->debugfs_root);
 
-	pr_info(VIDC_DBG_TAG "Closed video instance: %pK\n",
+	pr_debug(VIDC_DBG_TAG "Closed video instance: %pK\n",
 			VIDC_MSG_PRIO2STRING(VIDC_INFO), inst);
 	kfree(inst);
 	return 0;
 }
 
+static void close_helper(struct kref *kref)
+{
+	struct msm_vidc_inst *inst = container_of(kref,
+			struct msm_vidc_inst, kref);
+
+	msm_vidc_destroy(inst);
+}
+
 int msm_vidc_close(void *instance)
 {
-	void close_helper(struct kref *kref)
-	{
-		struct msm_vidc_inst *inst = container_of(kref,
-				struct msm_vidc_inst, kref);
-
-		msm_vidc_destroy(inst);
-	}
-
 	struct msm_vidc_inst *inst = instance;
 	struct buffer_info *bi, *dummy;
 	int rc = 0, i = 0;

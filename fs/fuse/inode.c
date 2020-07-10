@@ -425,6 +425,7 @@ static int fuse_statfs(struct dentry *dentry, struct kstatfs *buf)
 	err = fuse_simple_request(fc, &args);
 	if (!err)
 		convert_fuse_statfs(buf, &outarg.st);
+
 	return err;
 }
 
@@ -561,6 +562,7 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 		seq_printf(m, ",max_read=%u", fc->max_read);
 	if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
 		seq_printf(m, ",blksize=%lu", sb->s_blocksize);
+
 	return 0;
 }
 

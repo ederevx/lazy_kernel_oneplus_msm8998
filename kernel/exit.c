@@ -54,6 +54,7 @@
 #include <linux/writeback.h>
 #include <linux/shm.h>
 #include <linux/kcov.h>
+#include <linux/rcuwait.h>
 
 #include "sched/tune.h"
 
@@ -212,6 +213,111 @@ repeat:
 	p = leader;
 	if (unlikely(zap_leader))
 		goto repeat;
+}
+
+/*
+ * Note that if this function returns a valid task_struct pointer (!NULL)
+ * task->usage must remain >0 for the duration of the RCU critical section.
+ */
+struct task_struct *task_rcu_dereference(struct task_struct **ptask)
+{
+	struct sighand_struct *sighand;
+	struct task_struct *task;
+
+	/*
+	 * We need to verify that release_task() was not called and thus
+	 * delayed_put_task_struct() can't run and drop the last reference
+	 * before rcu_read_unlock(). We check task->sighand != NULL,
+	 * but we can read the already freed and reused memory.
+	 */
+retry:
+	task = rcu_dereference(*ptask);
+	if (!task)
+		return NULL;
+
+	probe_kernel_address(&task->sighand, sighand);
+
+	/*
+	 * Pairs with atomic_dec_and_test() in put_task_struct(). If this task
+	 * was already freed we can not miss the preceding update of this
+	 * pointer.
+	 */
+	smp_rmb();
+	if (unlikely(task != READ_ONCE(*ptask)))
+		goto retry;
+
+	/*
+	 * We've re-checked that "task == *ptask", now we have two different
+	 * cases:
+	 *
+	 * 1. This is actually the same task/task_struct. In this case
+	 *    sighand != NULL tells us it is still alive.
+	 *
+	 * 2. This is another task which got the same memory for task_struct.
+	 *    We can't know this of course, and we can not trust
+	 *    sighand != NULL.
+	 *
+	 *    In this case we actually return a random value, but this is
+	 *    correct.
+	 *
+	 *    If we return NULL - we can pretend that we actually noticed that
+	 *    *ptask was updated when the previous task has exited. Or pretend
+	 *    that probe_slab_address(&sighand) reads NULL.
+	 *
+	 *    If we return the new task (because sighand is not NULL for any
+	 *    reason) - this is fine too. This (new) task can't go away before
+	 *    another gp pass.
+	 *
+	 *    And note: We could even eliminate the false positive if re-read
+	 *    task->sighand once again to avoid the falsely NULL. But this case
+	 *    is very unlikely so we don't care.
+	 */
+	if (!sighand)
+		return NULL;
+
+	return task;
+}
+
+void rcuwait_wake_up(struct rcuwait *w)
+{
+	struct task_struct *task;
+
+	rcu_read_lock();
+
+	/*
+	 * Order condition vs @task, such that everything prior to the load
+	 * of @task is visible. This is the condition as to why the user called
+	 * rcuwait_trywake() in the first place. Pairs with set_current_state()
+	 * barrier (A) in rcuwait_wait_event().
+	 *
+	 *    WAIT                WAKE
+	 *    [S] tsk = current	  [S] cond = true
+	 *        MB (A)	      MB (B)
+	 *    [L] cond		  [L] tsk
+	 */
+	smp_rmb(); /* (B) */
+
+	/*
+	 * Avoid using task_rcu_dereference() magic as long as we are careful,
+	 * see comment in rcuwait_wait_event() regarding ->exit_state.
+	 */
+	task = rcu_dereference(w->task);
+	if (task)
+		wake_up_process(task);
+	rcu_read_unlock();
+}
+
+struct task_struct *try_get_task_struct(struct task_struct **ptask)
+{
+	struct task_struct *task;
+
+	rcu_read_lock();
+	task = task_rcu_dereference(ptask);
+	if (task)
+		get_task_struct(task);
+	rcu_read_unlock();
+
+	return task;
 }
 
 /*
@@ -440,8 +546,12 @@ static void exit_mm(struct task_struct *tsk)
 	mm_update_next_owner(mm);
 
 	mm_released = mmput(mm);
+#ifdef CONFIG_ANDROID_SIMPLE_LMK
+	clear_thread_flag(TIF_MEMDIE);
+#else
 	if (test_thread_flag(TIF_MEMDIE))
 		exit_oom_victim();
+#endif
 	if (mm_released)
 		set_tsk_thread_flag(tsk, TIF_MM_RELEASED);
 }
@@ -671,7 +781,7 @@ static void check_stack_usage(void)
 static inline void check_stack_usage(void) {}
 #endif
 
-void do_exit(long code)
+void __noreturn do_exit(long code)
 {
 	struct task_struct *tsk = current;
 	int group_dead;
@@ -722,7 +832,6 @@ void do_exit(long code)
 
 	exit_signals(tsk);  /* sets PF_EXITING */
 
-	sched_exit(tsk);
 	schedtune_exit_task(tsk);
 
 	/*
@@ -833,29 +942,7 @@ void do_exit(long code)
 	exit_rcu();
 	TASKS_RCU(__srcu_read_unlock(&tasks_rcu_exit_srcu, tasks_rcu_i));
 
-	/*
-	 * The setting of TASK_RUNNING by try_to_wake_up() may be delayed
-	 * when the following two conditions become true.
-	 *   - There is race condition of mmap_sem (It is acquired by
-	 *     exit_mm()), and
-	 *   - SMI occurs before setting TASK_RUNINNG.
-	 *     (or hypervisor of virtual machine switches to other guest)
-	 *  As a result, we may become TASK_RUNNING after becoming TASK_DEAD
-	 *
-	 * To avoid it, we have to wait for releasing tsk->pi_lock which
-	 * is held by try_to_wake_up()
-	 */
-	smp_mb();
-	raw_spin_unlock_wait(&tsk->pi_lock);
-
-	/* causes final put_task_struct in finish_task_switch(). */
-	tsk->state = TASK_DEAD;
-	tsk->flags |= PF_NOFREEZE;	/* tell freezer to ignore us */
-	schedule();
-	BUG();
-	/* Avoid "noreturn function does return".  */
-	for (;;)
-		cpu_relax();	/* For when BUG is null */
+	do_task_dead();
 }
 EXPORT_SYMBOL_GPL(do_exit);
 

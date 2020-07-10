@@ -446,6 +446,7 @@ struct mdss_dsi_ctrl_pdata {
 	struct clk *pixel_clk_rcg;
 	struct clk *vco_dummy_clk;
 	struct clk *byte_intf_clk;
+	struct mutex panel_mode_lock;
 	u8 ctrl_state;
 	int panel_mode;
 	int irq_cnt;
@@ -521,6 +522,9 @@ struct mdss_dsi_ctrl_pdata {
 	struct completion bta_comp;
 	spinlock_t irq_lock;
 	spinlock_t mdp_lock;
+#if defined(CONFIG_IRIS2_FULL_SUPPORT) || defined(CONFIG_IRIS2P_FULL_SUPPORT)
+	spinlock_t iris_lock;
+#endif
 	int mdp_busy;
 	struct mutex mutex;
 	struct mutex cmd_mutex;
@@ -574,8 +578,55 @@ struct mdss_dsi_ctrl_pdata {
 	int m_mdp_vote_cnt;
 	/* debugfs structure */
 	struct mdss_dsi_debugfs_info *debugfs_info;
-
 	struct dsi_err_container err_cont;
+
+	struct delayed_work techeck_work;
+	struct completion te_comp;
+
+	int disp_vci_en_gpio;
+	int disp_poc_en_gpio;
+
+	struct dsi_panel_cmds hbm_on_cmds;
+	struct dsi_panel_cmds hbm_off_cmds;
+	int hbm_mode;
+
+	bool is_panel_on;
+	bool setting_mode_loaded;
+
+	int SRGB_mode;
+	struct dsi_panel_cmds srgb_on_cmds;
+	struct dsi_panel_cmds srgb_off_cmds;
+
+
+	int Adobe_RGB_mode;
+	struct dsi_panel_cmds Adobe_RGB_on_cmds;
+	struct dsi_panel_cmds Adobe_RGB_off_cmds;
+
+	int dci_p3_mode;
+	struct dsi_panel_cmds dci_p3_on_cmds;
+	struct dsi_panel_cmds dci_p3_off_cmds;
+
+	int night_mode;
+	struct dsi_panel_cmds night_mode_on_cmds;
+	struct dsi_panel_cmds night_mode_off_cmds;
+	int oneplus_mode;
+	struct dsi_panel_cmds oneplus_mode_on_cmds;
+	struct dsi_panel_cmds oneplus_mode_off_cmds;
+	int adaption_mode;
+	struct dsi_panel_cmds adaption_mode_on_cmds;
+	struct dsi_panel_cmds adaption_mode_off_cmds;
+
+
+	int px_clk_req_gpio;
+	int px_clk_clk_en_gpio;
+	const char *px_clk_src_name;
+	struct	clk	*px_clk_src;
+	int px_clk_enabled;
+	int px_bp_gpio;
+	int isp_1v1_en_gpio;
+	bool bl_high2bit;
+	bool high_brightness_panel;
+
 
 	struct kobject *kobj;
 	int fb_node;
@@ -591,6 +642,18 @@ struct mdss_dsi_ctrl_pdata {
 	bool update_phy_timing; /* flag to recalculate PHY timings */
 
 	bool phy_power_off;
+
+	struct notifier_block wake_notif;
+	struct task_struct *wake_thread;
+	struct completion wake_comp;
+	wait_queue_head_t wake_waitq;
+	atomic_t disp_en;
+};
+
+enum {
+	MDSS_DISPLAY_OFF,
+	MDSS_DISPLAY_WAKING,
+	MDSS_DISPLAY_ON
 };
 
 struct dsi_status_data {
@@ -598,6 +661,45 @@ struct dsi_status_data {
 	struct delayed_work check_status;
 	struct msm_fb_data_type *mfd;
 };
+
+int mdss_dsi_panel_set_srgb_mode(struct mdss_dsi_ctrl_pdata *ctrl, int level);
+int mdss_dsi_panel_get_srgb_mode(struct mdss_dsi_ctrl_pdata *ctrl);
+
+int mdss_dsi_panel_set_hbm_mode(struct mdss_dsi_ctrl_pdata *ctrl, int level);
+int mdss_dsi_panel_get_hbm_mode(struct mdss_dsi_ctrl_pdata *ctrl);
+
+int mdss_dsi_panel_set_adobe_rgb_mode
+	(struct mdss_dsi_ctrl_pdata *ctrl, int level);
+int mdss_dsi_panel_get_adobe_rgb_mode
+	(struct mdss_dsi_ctrl_pdata *ctrl);
+
+
+int mdss_dsi_panel_set_dci_p3_mode
+	(struct mdss_dsi_ctrl_pdata *ctrl, int level);
+int mdss_dsi_panel_get_dci_p3_mode(struct mdss_dsi_ctrl_pdata *ctrl);
+
+
+int mdss_dsi_panel_set_night_mode
+	(struct mdss_dsi_ctrl_pdata *ctrl, int level);
+int mdss_dsi_panel_get_night_mode
+	(struct mdss_dsi_ctrl_pdata *ctrl);
+
+
+int mdss_dsi_panel_set_oneplus_mode
+	(struct mdss_dsi_ctrl_pdata *ctrl, int level);
+int mdss_dsi_panel_get_oneplus_mode(struct mdss_dsi_ctrl_pdata *ctrl);
+
+
+int mdss_dsi_panel_set_adaption_mode
+	(struct mdss_dsi_ctrl_pdata *ctrl, int level);
+int mdss_dsi_panel_get_adaption_mode(struct mdss_dsi_ctrl_pdata *ctrl);
+
+
+int mdss_dsi_disp_poc_en(struct mdss_panel_data *pdata, int enable);
+int mdss_dsi_px_clk_req(struct mdss_panel_data *pdata, int enable);
+int mdss_dsi_disp_vci_en(struct mdss_panel_data *pdata, int enable);
+int mdss_dsi_isp_1v1_en(struct mdss_panel_data *pdata, int enable);
+
 
 void mdss_dsi_read_hw_revision(struct mdss_dsi_ctrl_pdata *ctrl);
 int dsi_panel_device_register(struct platform_device *ctrl_pdev,
@@ -712,7 +814,13 @@ void mdss_dsi_set_reg(struct mdss_dsi_ctrl_pdata *ctrl, int off,
 int mdss_dsi_phy_pll_reset_status(struct mdss_dsi_ctrl_pdata *ctrl);
 int mdss_dsi_check_panel_status(struct mdss_dsi_ctrl_pdata *ctrl, void *arg);
 
+#ifdef CONFIG_DEBUG_FS
 void mdss_dsi_debug_bus_init(struct mdss_dsi_data *sdata);
+#else
+static inline void mdss_dsi_debug_bus_init(struct mdss_dsi_data *sdata)
+{
+}
+#endif
 
 static inline const char *__mdss_dsi_pm_name(enum dsi_pm_type module)
 {

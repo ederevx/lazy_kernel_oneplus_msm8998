@@ -20,6 +20,7 @@
 #include <trace/events/power.h>
 #include <linux/wakeup_reason.h>
 #include <linux/cpuset.h>
+#include <linux/cpufreq.h>
 
 /*
  * Timeout for stopping processes
@@ -94,12 +95,12 @@ static int try_to_freeze_tasks(bool user_only)
 	elapsed_msecs = elapsed_msecs64;
 
 	if (wakeup) {
-		pr_cont("\n");
-		pr_err("Freezing of tasks aborted after %d.%03d seconds",
+		pr_debug("\n");
+		pr_debug("Freezing of tasks aborted after %d.%03d seconds",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000);
 	} else if (todo) {
-		pr_cont("\n");
-		pr_err("Freezing of tasks failed after %d.%03d seconds"
+		pr_debug("\n");
+		pr_debug("Freezing of tasks failed after %d.%03d seconds"
 		       " (%d tasks refusing to freeze, wq_busy=%d):\n",
 		       elapsed_msecs / 1000, elapsed_msecs % 1000,
 		       todo - wq_busy, wq_busy);
@@ -112,7 +113,7 @@ static int try_to_freeze_tasks(bool user_only)
 			}
 			read_unlock(&tasklist_lock);
 	} else {
-		pr_cont("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
+		pr_debug("(elapsed %d.%03d seconds) ", elapsed_msecs / 1000,
 			elapsed_msecs % 1000);
 	}
 
@@ -141,14 +142,14 @@ int freeze_processes(void)
 		atomic_inc(&system_freezing_cnt);
 
 	pm_wakeup_clear();
-	pr_info("Freezing user space processes ... ");
+	pr_debug("Freezing user space processes ... ");
 	pm_freezing = true;
 	error = try_to_freeze_tasks(true);
 	if (!error) {
 		__usermodehelper_set_disable_depth(UMH_DISABLED);
-		pr_cont("done.");
+		pr_debug("done.");
 	}
-	pr_cont("\n");
+	pr_debug("\n");
 	BUG_ON(in_atomic());
 
 	/*
@@ -176,19 +177,42 @@ int freeze_kernel_threads(void)
 {
 	int error;
 
-	pr_info("Freezing remaining freezable tasks ... ");
+	pr_debug("Freezing remaining freezable tasks ... ");
 
 	pm_nosig_freezing = true;
 	error = try_to_freeze_tasks(false);
 	if (!error)
-		pr_cont("done.");
+		pr_debug("done.");
 
-	pr_cont("\n");
+	pr_debug("\n");
 	BUG_ON(in_atomic());
 
 	if (error)
 		thaw_kernel_threads();
 	return error;
+}
+
+void thaw_fingerprintd(void)
+{
+       struct task_struct *g, *p;
+       struct task_struct *curr = current;
+
+       pm_freezing = false;
+       pm_nosig_freezing = false;
+       if (fp_irq_cnt)
+               fp_irq_cnt = false;
+       read_lock(&tasklist_lock);
+       for_each_process_thread(g, p) {
+       /* No other threads should have PF_SUSPEND_TASK set */
+       WARN_ON((p != curr) && (p->flags & PF_SUSPEND_TASK));
+       if (!memcmp(p->comm, "fingerprintd", 13))
+               __thaw_task(p);
+       if (!memcmp(p->comm, "fingerprintmsg", 15))
+               __thaw_task(p);
+       }
+       read_unlock(&tasklist_lock);
+       pm_freezing = true;
+       pm_nosig_freezing = true;
 }
 
 void thaw_processes(void)
@@ -204,7 +228,7 @@ void thaw_processes(void)
 
 	oom_killer_enable();
 
-	pr_info("Restarting tasks ... ");
+	pr_debug("Restarting tasks ... ");
 
 	__usermodehelper_set_disable_depth(UMH_FREEZING);
 	thaw_workqueues();
@@ -225,7 +249,7 @@ void thaw_processes(void)
 	usermodehelper_enable();
 
 	schedule();
-	pr_cont("done.\n");
+	pr_debug("done.\n");
 	trace_suspend_resume(TPS("thaw_processes"), 0, false);
 }
 
@@ -246,5 +270,5 @@ void thaw_kernel_threads(void)
 	read_unlock(&tasklist_lock);
 
 	schedule();
-	pr_cont("done.\n");
+	pr_debug("done.\n");
 }

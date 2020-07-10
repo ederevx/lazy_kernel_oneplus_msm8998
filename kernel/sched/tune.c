@@ -121,33 +121,6 @@ struct schedtune {
 	/* Boost value for tasks on that SchedTune CGroup */
 	int boost;
 
-#ifdef CONFIG_SCHED_HMP
-	/* Toggle ability to override sched boost enabled */
-	bool sched_boost_no_override;
-
-	/*
-	 * Controls whether a cgroup is eligible for sched boost or not. This
-	 * can temporariliy be disabled by the kernel based on the no_override
-	 * flag above.
-	 */
-	bool sched_boost_enabled;
-
-	/*
-	 * This tracks the default value of sched_boost_enabled and is used
-	 * restore the value following any temporary changes to that flag.
-	 */
-	bool sched_boost_enabled_backup;
-
-	/*
-	 * Controls whether tasks of this cgroup should be colocated with each
-	 * other and tasks of other cgroups that have the same flag turned on.
-	 */
-	bool colocate;
-
-	/* Controls whether further updates are allowed to the colocate flag */
-	bool colocate_update_disabled;
-#endif
-
 	/* Performance Boost (B) region threshold params */
 	int perf_boost_idx;
 
@@ -186,13 +159,6 @@ static inline struct schedtune *parent_st(struct schedtune *st)
 static struct schedtune
 root_schedtune = {
 	.boost	= 0,
-#ifdef CONFIG_SCHED_HMP
-	.sched_boost_no_override = false,
-	.sched_boost_enabled = true,
-	.sched_boost_enabled_backup = true,
-	.colocate = false,
-	.colocate_update_disabled = false,
-#endif
 	.perf_boost_idx = 0,
 	.perf_constrain_idx = 0,
 	.prefer_idle = 0,
@@ -240,7 +206,7 @@ schedtune_accept_deltas(int nrg_delta, int cap_delta,
  *    implementation especially for the computation of the per-CPU boost
  *    value
  */
-#define BOOSTGROUPS_COUNT 5
+#define BOOSTGROUPS_COUNT 6
 
 /* Array of configured boostgroups */
 static struct schedtune *allocated_group[BOOSTGROUPS_COUNT] = {
@@ -273,133 +239,16 @@ struct boost_groups {
 /* Boost groups affecting each CPU in the system */
 DEFINE_PER_CPU(struct boost_groups, cpu_boost_groups);
 
-#ifdef CONFIG_SCHED_HMP
-static inline void init_sched_boost(struct schedtune *st)
-{
-	st->sched_boost_no_override = false;
-	st->sched_boost_enabled = true;
-	st->sched_boost_enabled_backup = st->sched_boost_enabled;
-	st->colocate = false;
-	st->colocate_update_disabled = false;
-}
-
-bool same_schedtune(struct task_struct *tsk1, struct task_struct *tsk2)
-{
-	return task_schedtune(tsk1) == task_schedtune(tsk2);
-}
-
-void update_cgroup_boost_settings(void)
-{
-	int i;
-
-	for (i = 0; i < BOOSTGROUPS_COUNT; i++) {
-		if (!allocated_group[i])
-			break;
-
-		if (allocated_group[i]->sched_boost_no_override)
-			continue;
-
-		allocated_group[i]->sched_boost_enabled = false;
-	}
-}
-
-void restore_cgroup_boost_settings(void)
-{
-	int i;
-
-	for (i = 0; i < BOOSTGROUPS_COUNT; i++) {
-		if (!allocated_group[i])
-			break;
-
-		allocated_group[i]->sched_boost_enabled =
-			allocated_group[i]->sched_boost_enabled_backup;
-	}
-}
-
-bool task_sched_boost(struct task_struct *p)
-{
-	struct schedtune *st = task_schedtune(p);
-
-	return st->sched_boost_enabled;
-}
-
-static u64
-sched_boost_override_read(struct cgroup_subsys_state *css,
-			struct cftype *cft)
-{
-	struct schedtune *st = css_st(css);
-
-	return st->sched_boost_no_override;
-}
-
-static int sched_boost_override_write(struct cgroup_subsys_state *css,
-			struct cftype *cft, u64 override)
-{
-	struct schedtune *st = css_st(css);
-
-	st->sched_boost_no_override = !!override;
-
-	return 0;
-}
-
-static u64 sched_boost_enabled_read(struct cgroup_subsys_state *css,
-			struct cftype *cft)
-{
-	struct schedtune *st = css_st(css);
-
-	return st->sched_boost_enabled;
-}
-
-static int sched_boost_enabled_write(struct cgroup_subsys_state *css,
-			struct cftype *cft, u64 enable)
-{
-	struct schedtune *st = css_st(css);
-
-	st->sched_boost_enabled = !!enable;
-	st->sched_boost_enabled_backup = st->sched_boost_enabled;
-
-	return 0;
-}
-
-static u64 sched_colocate_read(struct cgroup_subsys_state *css,
-			struct cftype *cft)
-{
-	struct schedtune *st = css_st(css);
-
-	return st->colocate;
-}
-
-static int sched_colocate_write(struct cgroup_subsys_state *css,
-			struct cftype *cft, u64 colocate)
-{
-	struct schedtune *st = css_st(css);
-
-	if (st->colocate_update_disabled)
-		return -EPERM;
-
-	st->colocate = !!colocate;
-	st->colocate_update_disabled = true;
-	return 0;
-}
-
-#else /* CONFIG_SCHED_HMP */
-
-static inline void init_sched_boost(struct schedtune *st) { }
-
-#endif /* CONFIG_SCHED_HMP */
-
 static void
 schedtune_cpu_update(int cpu)
 {
 	struct boost_groups *bg;
-	int boost_max;
+	int boost_max = INT_MIN;
 	int idx;
 
 	bg = &per_cpu(cpu_boost_groups, cpu);
 
-	/* The root boost group is always active */
-	boost_max = bg->group[0].boost;
-	for (idx = 1; idx < BOOSTGROUPS_COUNT; ++idx) {
+	for (idx = 0; idx < BOOSTGROUPS_COUNT; ++idx) {
 		/*
 		 * A boost group affects a CPU only if it has
 		 * RUNNABLE tasks on that CPU
@@ -409,10 +258,10 @@ schedtune_cpu_update(int cpu)
 
 		boost_max = max(boost_max, bg->group[idx].boost);
 	}
-	/* Ensures boost_max is non-negative when all cgroup boost values
-	 * are neagtive. Avoids under-accounting of cpu capacity which may cause
-	 * task stacking and frequency spikes.*/
-	boost_max = max(boost_max, 0);
+
+	/* If there are no active boost groups on the CPU, set no boost  */
+	if (boost_max == INT_MIN)
+		boost_max = 0;
 	bg->boost_max = boost_max;
 }
 
@@ -471,12 +320,13 @@ schedtune_tasks_update(struct task_struct *p, int cpu, int idx, int task_count)
 	/* Update boosted tasks count while avoiding to make it negative */
 	bg->group[idx].tasks = max(0, tasks);
 
-	trace_sched_tune_tasks_update(p, cpu, tasks, idx,
-			bg->group[idx].boost, bg->boost_max);
-
 	/* Boost group activation or deactivation on that RQ */
 	if (tasks == 1 || tasks == 0)
 		schedtune_cpu_update(cpu);
+
+	trace_sched_tune_tasks_update(p, cpu, tasks, idx,
+			bg->group[idx].boost, bg->boost_max);
+
 }
 
 /*
@@ -485,7 +335,7 @@ schedtune_tasks_update(struct task_struct *p, int cpu, int idx, int task_count)
 void schedtune_enqueue_task(struct task_struct *p, int cpu)
 {
 	struct boost_groups *bg = &per_cpu(cpu_boost_groups, cpu);
-	unsigned long irq_flags;
+	struct rq_flags rf;
 	struct schedtune *st;
 	int idx;
 
@@ -506,7 +356,7 @@ void schedtune_enqueue_task(struct task_struct *p, int cpu)
 	 * interrupt to be disabled to avoid race conditions for example on
 	 * do_exit()::cgroup_exit() and task migration.
 	 */
-	raw_spin_lock_irqsave(&bg->lock, irq_flags);
+	raw_spin_lock_irqsave(&bg->lock, rf.flags);
 	rcu_read_lock();
 
 	st = task_schedtune(p);
@@ -515,7 +365,14 @@ void schedtune_enqueue_task(struct task_struct *p, int cpu)
 	schedtune_tasks_update(p, cpu, idx, ENQUEUE_TASK);
 
 	rcu_read_unlock();
-	raw_spin_unlock_irqrestore(&bg->lock, irq_flags);
+	raw_spin_unlock_irqrestore(&bg->lock, rf.flags);
+}
+
+int schedtune_allow_attach(struct cgroup_subsys_state *css,
+			   struct cgroup_taskset *tset)
+{
+	/* We always allows tasks to be moved between existing CGroups */
+	return 0;
 }
 
 int schedtune_can_attach(struct cgroup_taskset *tset)
@@ -523,7 +380,7 @@ int schedtune_can_attach(struct cgroup_taskset *tset)
 	struct task_struct *task;
 	struct cgroup_subsys_state *css;
 	struct boost_groups *bg;
-	unsigned long irq_flags;
+	struct rq_flags rf;
 	unsigned int cpu;
 	struct rq *rq;
 	int src_bg; /* Source boost group index */
@@ -533,7 +390,6 @@ int schedtune_can_attach(struct cgroup_taskset *tset)
 	if (!unlikely(schedtune_initialized))
 		return 0;
 
-
 	cgroup_taskset_for_each(task, css, tset) {
 
 		/*
@@ -541,10 +397,10 @@ int schedtune_can_attach(struct cgroup_taskset *tset)
 		 * conditions with migration code while the task is being
 		 * accounted
 		 */
-		rq = lock_rq_of(task, &irq_flags);
+		rq = lock_rq_of(task, &rf);
 
 		if (!task->on_rq) {
-			unlock_rq_of(rq, task, &irq_flags);
+			unlock_rq_of(rq, task, &rf);
 			continue;
 		}
 
@@ -565,7 +421,7 @@ int schedtune_can_attach(struct cgroup_taskset *tset)
 		 */
 		if (unlikely(dst_bg == src_bg)) {
 			raw_spin_unlock(&bg->lock);
-			unlock_rq_of(rq, task, &irq_flags);
+			unlock_rq_of(rq, task, &rf);
 			continue;
 		}
 
@@ -580,7 +436,7 @@ int schedtune_can_attach(struct cgroup_taskset *tset)
 		bg->group[dst_bg].tasks += 1;
 
 		raw_spin_unlock(&bg->lock);
-		unlock_rq_of(rq, task, &irq_flags);
+		unlock_rq_of(rq, task, &rf);
 
 		/* Update CPU boost group */
 		if (bg->group[src_bg].tasks == 0 || bg->group[dst_bg].tasks == 1)
@@ -606,7 +462,7 @@ void schedtune_cancel_attach(struct cgroup_taskset *tset)
 void schedtune_dequeue_task(struct task_struct *p, int cpu)
 {
 	struct boost_groups *bg = &per_cpu(cpu_boost_groups, cpu);
-	unsigned long irq_flags;
+	struct rq_flags rf;
 	struct schedtune *st;
 	int idx;
 
@@ -628,7 +484,7 @@ void schedtune_dequeue_task(struct task_struct *p, int cpu)
 	 * Boost group accouting is protected by a per-cpu lock and requires
 	 * interrupt to be disabled to avoid race conditions on...
 	 */
-	raw_spin_lock_irqsave(&bg->lock, irq_flags);
+	raw_spin_lock_irqsave(&bg->lock, rf.flags);
 	rcu_read_lock();
 
 	st = task_schedtune(p);
@@ -637,13 +493,13 @@ void schedtune_dequeue_task(struct task_struct *p, int cpu)
 	schedtune_tasks_update(p, cpu, idx, DEQUEUE_TASK);
 
 	rcu_read_unlock();
-	raw_spin_unlock_irqrestore(&bg->lock, irq_flags);
+	raw_spin_unlock_irqrestore(&bg->lock, rf.flags);
 }
 
 void schedtune_exit_task(struct task_struct *tsk)
 {
 	struct schedtune *st;
-	unsigned long irq_flags;
+	struct rq_flags rf;
 	unsigned int cpu;
 	struct rq *rq;
 	int idx;
@@ -651,7 +507,7 @@ void schedtune_exit_task(struct task_struct *tsk)
 	if (!unlikely(schedtune_initialized))
 		return;
 
-	rq = lock_rq_of(tsk, &irq_flags);
+	rq = lock_rq_of(tsk, &rf);
 	rcu_read_lock();
 
 	cpu = cpu_of(rq);
@@ -660,7 +516,7 @@ void schedtune_exit_task(struct task_struct *tsk)
 	schedtune_tasks_update(tsk, cpu, idx, DEQUEUE_TASK);
 
 	rcu_read_unlock();
-	unlock_rq_of(rq, tsk, &irq_flags);
+	unlock_rq_of(rq, tsk, &rf);
 }
 
 int schedtune_cpu_boost(int cpu)
@@ -684,6 +540,24 @@ int schedtune_task_boost(struct task_struct *p)
 	st = task_schedtune(p);
 	task_boost = st->boost;
 	rcu_read_unlock();
+
+	return task_boost;
+}
+
+/*  The same as schedtune_task_boost except assuming the caller has the rcu read
+ *  lock.
+ */
+int schedtune_task_boost_rcu_locked(struct task_struct *p)
+{
+	struct schedtune *st;
+	int task_boost;
+
+	if (unlikely(!schedtune_initialized))
+		return 0;
+
+	/* Get task boost value */
+	st = task_schedtune(p);
+	task_boost = st->boost;
 
 	return task_boost;
 }
@@ -739,6 +613,9 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	unsigned threshold_idx;
 	int boost_pct;
 
+	if (!strcmp(css->cgroup->kn->name, "top-app"))
+		boost = 5;
+
 	if (boost < -100 || boost > 100)
 		return -EINVAL;
 	boost_pct = boost;
@@ -768,50 +645,37 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	return 0;
 }
 
-static void schedtune_attach(struct cgroup_taskset *tset)
+#ifdef CONFIG_STUNE_ASSIST
+static int boost_write_wrapper(struct cgroup_subsys_state *css,
+			       struct cftype *cft, s64 boost)
 {
-	struct task_struct *task;
-	struct cgroup_subsys_state *css;
-	struct schedtune *st;
-	bool colocate;
+	if (task_is_booster(current))
+		return 0;
 
-	cgroup_taskset_first(tset, &css);
-	st = css_st(css);
-
-	colocate = st->colocate;
-
-	cgroup_taskset_for_each(task, css, tset)
-		sync_cgroup_colocation(task, colocate);
+	return boost_write(css, cft, boost);
 }
+
+static int prefer_idle_write_wrapper(struct cgroup_subsys_state *css,
+				     struct cftype *cft, u64 prefer_idle)
+{
+	if (task_is_booster(current))
+		return 0;
+
+	return prefer_idle_write(css, cft, prefer_idle);
+}
+#endif
 
 static struct cftype files[] = {
 	{
 		.name = "boost",
 		.read_s64 = boost_read,
-		.write_s64 = boost_write,
+		.write_s64 = boost_write_wrapper,
 	},
 	{
 		.name = "prefer_idle",
 		.read_u64 = prefer_idle_read,
-		.write_u64 = prefer_idle_write,
+		.write_u64 = prefer_idle_write_wrapper,
 	},
-#ifdef CONFIG_SCHED_HMP
-	{
-		.name = "sched_boost_no_override",
-		.read_u64 = sched_boost_override_read,
-		.write_u64 = sched_boost_override_write,
-	},
-	{
-		.name = "sched_boost_enabled",
-		.read_u64 = sched_boost_enabled_read,
-		.write_u64 = sched_boost_enabled_write,
-	},
-	{
-		.name = "colocate",
-		.read_u64 = sched_colocate_read,
-		.write_u64 = sched_colocate_write,
-	},
-#endif
 	{ }	/* terminate */
 };
 
@@ -834,6 +698,37 @@ schedtune_boostgroup_init(struct schedtune *st)
 	return 0;
 }
 
+#ifdef CONFIG_STUNE_ASSIST
+struct st_data {
+	char *name;
+	int boost;
+	bool prefer_idle;
+};
+static void write_default_values(struct cgroup_subsys_state *css)
+{
+	static struct st_data st_targets[] = {
+		{ "audio-app",	0, 0 },
+		{ "background",	0, 0 },
+		{ "foreground",	0, 0 },
+		{ "rt",		0, 0 },
+		{ "top-app",	5, 1 },
+	};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(st_targets); i++) {
+		struct st_data tgt = st_targets[i];
+
+		if (!strcmp(css->cgroup->kn->name, tgt.name)) {
+			pr_info("stune_assist: setting values for %s: boost=%d prefer_idle=%d\n",
+				tgt.name, tgt.boost, tgt.prefer_idle);
+
+			boost_write(css, NULL, tgt.boost);
+			prefer_idle_write(css, NULL, tgt.prefer_idle);
+		}
+	}
+}
+#endif
+
 static struct cgroup_subsys_state *
 schedtune_css_alloc(struct cgroup_subsys_state *parent_css)
 {
@@ -849,10 +744,13 @@ schedtune_css_alloc(struct cgroup_subsys_state *parent_css)
 		return ERR_PTR(-ENOMEM);
 	}
 
-	/* Allow only a limited number of boosting groups */
-	for (idx = 1; idx < BOOSTGROUPS_COUNT; ++idx)
+	for (idx = 1; idx < BOOSTGROUPS_COUNT; ++idx) {
 		if (!allocated_group[idx])
 			break;
+#ifdef CONFIG_STUNE_ASSIST
+		write_default_values(&allocated_group[idx]->css);
+#endif
+	}
 	if (idx == BOOSTGROUPS_COUNT) {
 		pr_err("Trying to create more than %d SchedTune boosting groups\n",
 		       BOOSTGROUPS_COUNT);
@@ -865,7 +763,6 @@ schedtune_css_alloc(struct cgroup_subsys_state *parent_css)
 
 	/* Initialize per CPUs boost group support */
 	st->idx = idx;
-	init_sched_boost(st);
 	if (schedtune_boostgroup_init(st))
 		goto release;
 
@@ -899,11 +796,11 @@ schedtune_css_free(struct cgroup_subsys_state *css)
 struct cgroup_subsys schedtune_cgrp_subsys = {
 	.css_alloc	= schedtune_css_alloc,
 	.css_free	= schedtune_css_free,
+	.allow_attach   = schedtune_allow_attach,
 	.can_attach     = schedtune_can_attach,
 	.cancel_attach  = schedtune_cancel_attach,
 	.legacy_cftypes	= files,
 	.early_init	= 1,
-	.attach		= schedtune_attach,
 };
 
 static inline void
@@ -1027,7 +924,7 @@ schedtune_add_cluster_nrg(
 	int cpu;
 
 	/* Get Cluster energy using EM data for the first CPU */
-	cluster_cpus = sched_group_cpus(sg);
+	cluster_cpus = sched_group_span(sg);
 	snprintf(str, 32, "CLUSTER[%*pbl]",
 		 cpumask_pr_args(cluster_cpus));
 
@@ -1064,8 +961,8 @@ schedtune_add_cluster_nrg(
 			 * the upper CLUSTER level
 			 */
 			BUG_ON(!cpumask_equal(
-				sched_group_cpus(sg),
-				sched_group_cpus(sd2->parent->groups)
+				sched_group_span(sg),
+				sched_group_span(sd2->parent->groups)
 				));
 			break;
 		}
@@ -1099,8 +996,7 @@ schedtune_init(void)
 	 */
 	sd = rcu_dereference(per_cpu(sd_ea, cpumask_first(cpu_online_mask)));
 	if (!sd) {
-		if (energy_aware())
-			pr_warn("schedtune: no energy model data\n");
+		pr_info("schedtune: no energy model data\n");
 		goto nodata;
 	}
 

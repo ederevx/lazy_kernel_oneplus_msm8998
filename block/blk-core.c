@@ -688,6 +688,13 @@ static void blk_queue_usage_counter_release(struct percpu_ref *ref)
 	wake_up_all(&q->mq_freeze_wq);
 }
 
+static void blk_rq_timed_out_timer(unsigned long data)
+{
+	struct request_queue *q = (struct request_queue *)data;
+
+	kblockd_schedule_work(&q->timeout_work);
+}
+
 struct request_queue *blk_alloc_queue_node(gfp_t gfp_mask, int node_id)
 {
 	struct request_queue *q;
@@ -851,6 +858,7 @@ blk_init_allocated_queue(struct request_queue *q, request_fn_proc *rfn,
 	if (blk_init_rl(&q->root_rl, q, GFP_KERNEL))
 		goto fail;
 
+	INIT_WORK(&q->timeout_work, blk_timeout_work);
 	q->request_fn		= rfn;
 	q->prep_rq_fn		= NULL;
 	q->unprep_rq_fn		= NULL;
@@ -1782,6 +1790,11 @@ get_rq:
 		rw_flags |= REQ_SYNC;
 
 	/*
+	 * Add in META/PRIO flags, if set, before we get to the IO scheduler
+	 */
+	rw_flags |= (bio->bi_rw & (REQ_META | REQ_PRIO));
+
+	/*
 	 * Grab a free request. This is might sleep but can not fail.
 	 * Returns with the queue unlocked.
 	 */
@@ -2495,12 +2508,12 @@ static void set_submit_info(struct bio *bio, unsigned int count)
 
 	if (unlikely(blk_perf.is_enabled))  {
 		submit_time = ktime_get();
-		bio->submit_time.tv64 = submit_time.tv64;
+		bio->submit_time = submit_time;
 		bio->blk_sector_count = count;
 		return;
 	}
 
-	bio->submit_time.tv64 = 0;
+	bio->submit_time = 0;
 	bio->blk_sector_count = 0;
 }
 
@@ -2545,7 +2558,7 @@ void blk_update_perf_stats(struct bio *bio)
 	spin_lock(&blk_perf.lock);
 	if (likely(!blk_perf.is_enabled))
 		goto end;
-	if (!bio->submit_time.tv64)
+	if (!bio->submit_time)
 		goto end;
 	bio_process_time = ktime_sub(ktime_get(), bio->submit_time);
 

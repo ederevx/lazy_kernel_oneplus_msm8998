@@ -1243,7 +1243,7 @@ int ipa3_add_rt_rule_after(struct ipa_ioc_add_rt_rule_after *rules)
 	tbl = __ipa3_find_rt_tbl(rules->ip, rules->rt_tbl_name);
 	if (tbl == NULL || (tbl->cookie != IPA_RT_TBL_COOKIE)) {
 		IPAERR_RL("failed finding rt tbl name = %s\n",
-			rules->rt_tbl_name ? rules->rt_tbl_name : "");
+			(rules->rt_tbl_name != NULL) ? rules->rt_tbl_name : "");
 		ret = -EINVAL;
 		goto bail;
 	}
@@ -1690,19 +1690,17 @@ int ipa3_put_rt_tbl(u32 rt_tbl_hdl)
 {
 	struct ipa3_rt_tbl *entry;
 	enum ipa_ip_type ip = IPA_IP_MAX;
-	int result = 0;
+	int result = -EINVAL;
 
 	mutex_lock(&ipa3_ctx->lock);
 	entry = ipa3_id_find(rt_tbl_hdl);
 	if (entry == NULL) {
 		IPAERR_RL("lookup failed\n");
-		result = -EINVAL;
 		goto ret;
 	}
 
 	if ((entry->cookie != IPA_RT_TBL_COOKIE) || entry->ref_cnt == 0) {
 		IPAERR_RL("bad parms\n");
-		result = -EINVAL;
 		goto ret;
 	}
 

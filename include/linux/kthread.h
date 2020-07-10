@@ -3,6 +3,7 @@
 /* Simple interface for creating and stopping kernel threads without mess. */
 #include <linux/err.h>
 #include <linux/sched.h>
+#include <linux/cgroup.h>
 
 __printf(4, 5)
 struct task_struct *kthread_create_on_node(int (*threadfn)(void *data),
@@ -37,6 +38,24 @@ struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
 	__k;								   \
 })
 
+/**
+ * kthread_run_perf_critical - create and wake a performance-critical thread.
+ *
+ * Same as kthread_create().
+ */
+#define kthread_run_perf_critical(threadfn, data, namefmt, ...)		   \
+({									   \
+	struct task_struct *__k						   \
+		= kthread_create(threadfn, data, namefmt, ## __VA_ARGS__); \
+	if (!IS_ERR(__k)) {						   \
+		__k->flags |= PF_PERF_CRITICAL;				   \
+		kthread_bind_mask(__k, cpu_perf_mask);			   \
+		wake_up_process(__k);					   \
+	}								   \
+	__k;								   \
+})
+
+void free_kthread_struct(struct task_struct *k);
 void kthread_bind(struct task_struct *k, unsigned int cpu);
 void kthread_bind_mask(struct task_struct *k, const struct cpumask *mask);
 int kthread_stop(struct task_struct *k);
@@ -133,4 +152,14 @@ void flush_kthread_worker(struct kthread_worker *worker);
 
 bool kthread_cancel_work_sync(struct kthread_work *work);
 
+#ifdef CONFIG_CGROUPS
+void kthread_associate_blkcg(struct cgroup_subsys_state *css);
+struct cgroup_subsys_state *kthread_blkcg(void);
+#else
+static inline void kthread_associate_blkcg(struct cgroup_subsys_state *css) { }
+static inline struct cgroup_subsys_state *kthread_blkcg(void)
+{
+	return NULL;
+}
+#endif
 #endif /* _LINUX_KTHREAD_H */

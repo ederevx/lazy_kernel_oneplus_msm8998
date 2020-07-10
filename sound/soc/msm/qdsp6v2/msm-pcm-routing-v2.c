@@ -15421,7 +15421,7 @@ static int msm_voice_sound_focus_get(struct snd_kcontrol *kcontrol,
 
 	ret = voc_get_sound_focus(&soundFocusData);
 	if (ret) {
-		pr_err("%s: Error getting Sound Focus Params, err=%d\n",
+		pr_debug("%s: Error getting Sound Focus Params, err=%d\n",
 			  __func__, ret);
 
 		ret = -EINVAL;
@@ -15453,7 +15453,7 @@ static int msm_voice_source_tracking_get(struct snd_kcontrol *kcontrol,
 
 	ret = voc_get_source_tracking(&sourceTrackingData);
 	if (ret) {
-		pr_err("%s: Error getting Source Tracking Params, err=%d\n",
+		pr_debug("%s: Error getting Source Tracking Params, err=%d\n",
 			  __func__, ret);
 
 		ret = -EINVAL;
@@ -15509,7 +15509,7 @@ static int msm_audio_get_copp_idx_from_port_id(int port_id, int session_type,
 			break;
 	}
 	if (i >= MSM_FRONTEND_DAI_MM_SIZE) {
-		pr_err("%s: Invalid FE, exiting\n", __func__);
+		pr_debug("%s: Invalid FE, exiting\n", __func__);
 
 		ret = -EINVAL;
 		goto done;
@@ -15619,7 +15619,7 @@ static int msm_audio_sound_focus_get(struct snd_kcontrol *kcontrol,
 	ret = msm_audio_get_copp_idx_from_port_id(port_id, SESSION_TYPE_TX,
 					    &copp_idx);
 	if (ret) {
-		pr_err("%s: Could not get copp idx for port_id=%d\n",
+		pr_debug("%s: Could not get copp idx for port_id=%d\n",
 			__func__, port_id);
 
 		ret = -EINVAL;
@@ -15662,7 +15662,7 @@ static int msm_audio_source_tracking_get(struct snd_kcontrol *kcontrol,
 	ret = msm_audio_get_copp_idx_from_port_id(port_id, SESSION_TYPE_TX,
 					    &copp_idx);
 	if (ret) {
-		pr_err("%s: Could not get copp idx for port_id=%d\n",
+		pr_debug("%s: Could not get copp idx for port_id=%d\n",
 			__func__, port_id);
 
 		ret = -EINVAL;
@@ -15887,23 +15887,23 @@ static const char * const int4_mi2s_rx_vi_fb_tx_stereo_mux_text[] = {
 	"ZERO", "INT5_MI2S_TX"
 };
 
-static const int const slim0_rx_vi_fb_tx_lch_value[] = {
+static const int slim0_rx_vi_fb_tx_lch_value[] = {
 	MSM_BACKEND_DAI_MAX, MSM_BACKEND_DAI_SLIMBUS_4_TX
 };
 
-static const int const slim0_rx_vi_fb_tx_rch_value[] = {
+static const int slim0_rx_vi_fb_tx_rch_value[] = {
 	MSM_BACKEND_DAI_MAX, MSM_BACKEND_DAI_SLIMBUS_4_TX
 };
 
-static const int const mi2s_rx_vi_fb_tx_value[] = {
+static const int mi2s_rx_vi_fb_tx_value[] = {
 	MSM_BACKEND_DAI_MAX, MSM_BACKEND_DAI_SENARY_MI2S_TX
 };
 
-static const int const int4_mi2s_rx_vi_fb_tx_mono_ch_value[] = {
+static const int int4_mi2s_rx_vi_fb_tx_mono_ch_value[] = {
 	MSM_BACKEND_DAI_MAX, MSM_BACKEND_DAI_INT5_MI2S_TX
 };
 
-static const int const int4_mi2s_rx_vi_fb_tx_stereo_ch_value[] = {
+static const int int4_mi2s_rx_vi_fb_tx_stereo_ch_value[] = {
 	MSM_BACKEND_DAI_MAX, MSM_BACKEND_DAI_INT5_MI2S_TX
 };
 
@@ -19438,7 +19438,11 @@ static const struct snd_soc_dapm_route intercon[] = {
 	{"TERT_MI2S_RX_DL_HL", "Switch", "TERT_MI2S_DL_HL"},
 	{"TERT_MI2S_RX", NULL, "TERT_MI2S_RX_DL_HL"},
 
-	{"QUAT_MI2S_RX_DL_HL", "Switch", "QUAT_MI2S_DL_HL"},
+	/* modify engineer echo_test route
+	 *{"QUAT_MI2S_RX_DL_HL", "Switch", "QUAT_MI2S_DL_HL"},
+	 */
+	{"QUAT_MI2S_RX_DL_HL", "Switch", "SLIM0_DL_HL"},
+
 	{"QUAT_MI2S_RX", NULL, "QUAT_MI2S_RX_DL_HL"},
 	{"MI2S_UL_HL", NULL, "TERT_MI2S_TX"},
 	{"INT3_MI2S_UL_HL", NULL, "INT3_MI2S_TX"},

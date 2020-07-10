@@ -2803,7 +2803,7 @@ static int do_vdd_mx(void)
 		}
 	}
 
-	if ((dis_cnt == thresh[MSM_VDD_MX_RESTRICTION].thresh_ct)) {
+	if (dis_cnt == thresh[MSM_VDD_MX_RESTRICTION].thresh_ct) {
 		ret = remove_vdd_mx_restriction();
 		if (ret)
 			pr_err("Failed to remove vdd mx restriction\n");
@@ -3171,7 +3171,8 @@ static int __ref update_offline_cores(int val)
 
 	if (pend_hotplug_req && !in_suspend && !retry_in_progress) {
 		retry_in_progress = true;
-		schedule_delayed_work(&retry_hotplug_work,
+		queue_delayed_work(system_power_efficient_wq,
+			&retry_hotplug_work,
 			msecs_to_jiffies(HOTPLUG_RETRY_INTERVAL_MS));
 	}
 
@@ -3665,8 +3666,9 @@ static void check_temp(struct work_struct *work)
 
 reschedule:
 	if (polling_enabled)
-		schedule_delayed_work(&check_temp_work,
-				msecs_to_jiffies(msm_thermal_info.poll_ms));
+		queue_delayed_work(system_power_efficient_wq,
+			&check_temp_work,
+			msecs_to_jiffies(msm_thermal_info.poll_ms));
 }
 
 static int __ref msm_thermal_cpu_callback(struct notifier_block *nfb,
@@ -6351,8 +6353,8 @@ static int fetch_cpu_mitigaiton_info(struct msm_thermal_data *data,
 			err = -ENOMEM;
 			goto fetch_mitig_exit;
 		}
-		strlcpy((char *) cpus[_cpu].sensor_type, sensor_name,
-			strlen(sensor_name) + 1);
+		strscpy((char *)cpus[_cpu].sensor_type, sensor_name,
+			sizeof(cpus[_cpu].sensor_type));
 		create_alias_name(_cpu, limits, pdev);
 	}
 
@@ -7582,7 +7584,7 @@ int __init msm_thermal_device_init(void)
 {
 	return platform_driver_register(&msm_thermal_device_driver);
 }
-arch_initcall(msm_thermal_device_init);
+subsys_initcall(msm_thermal_device_init);
 
 int __init msm_thermal_late_init(void)
 {

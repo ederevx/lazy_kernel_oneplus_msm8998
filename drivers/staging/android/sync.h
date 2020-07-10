@@ -137,6 +137,7 @@ struct sync_fence_cb {
 	struct fence_cb cb;
 	struct fence *sync_pt;
 	struct sync_fence *fence;
+	struct sync_fence_cb *next;
 };
 
 /**
@@ -154,7 +155,9 @@ struct sync_fence_cb {
 struct sync_fence {
 	struct file		*file;
 	struct kref		kref;
+#ifdef CONFIG_SYNC_DEBUG
 	char			name[64];
+#endif
 #ifdef CONFIG_DEBUG_FS
 	struct list_head	sync_fence_list;
 #endif
@@ -163,7 +166,7 @@ struct sync_fence {
 	wait_queue_head_t	wq;
 	atomic_t		status;
 
-	struct sync_fence_cb	cbs[];
+	struct sync_fence_cb	*cbs;
 };
 
 struct sync_fence_waiter;
@@ -299,6 +302,14 @@ void sync_fence_put(struct sync_fence *fence);
 void sync_fence_install(struct sync_fence *fence, int fd);
 
 /**
+ * sync_fence_signaled() - checks if the fence has already signaled
+ * @fence:		fence to check
+ *
+ * Returns true if @fence has already signaled.
+ */
+bool sync_fence_signaled(struct sync_fence *fence);
+
+/**
  * sync_fence_wait_async() - registers and async wait on the fence
  * @fence:		fence to wait on
  * @waiter:		waiter callback struck
@@ -335,21 +346,20 @@ int sync_fence_cancel_async(struct sync_fence *fence,
  */
 int sync_fence_wait(struct sync_fence *fence, long timeout);
 
-#ifdef CONFIG_DEBUG_FS
-
+#if defined(CONFIG_DEBUG_FS) && defined(CONFIG_DEBUG_TIMELINE)
 void sync_timeline_debug_add(struct sync_timeline *obj);
 void sync_timeline_debug_remove(struct sync_timeline *obj);
 void sync_fence_debug_add(struct sync_fence *fence);
 void sync_fence_debug_remove(struct sync_fence *fence);
 void sync_dump(void);
-
 #else
-# define sync_timeline_debug_add(obj)
-# define sync_timeline_debug_remove(obj)
-# define sync_fence_debug_add(fence)
-# define sync_fence_debug_remove(fence)
-# define sync_dump()
+static void inline sync_timeline_debug_add(struct sync_timeline *obj) {}
+static void inline sync_timeline_debug_remove(struct sync_timeline *obj) {}
+static void inline sync_fence_debug_add(struct sync_fence *fence) {}
+static void inline sync_fence_debug_remove(struct sync_fence *fence) {}
+static void inline sync_dump(void) {}
 #endif
+
 int sync_fence_wake_up_wq(wait_queue_t *curr, unsigned mode,
 				 int wake_flags, void *key);
 

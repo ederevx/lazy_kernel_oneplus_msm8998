@@ -59,6 +59,8 @@
 #include <linux/delay.h>
 #include <linux/cpuset.h>
 #include <linux/atomic.h>
+#include <linux/binfmts.h>
+#include <linux/cpu_input_boost.h>
 
 /*
  * pidlists linger the following amount before being destroyed.  The goal
@@ -468,25 +470,6 @@ struct cgroup_subsys_state *of_css(struct kernfs_open_file *of)
 		return &cgrp->self;
 }
 EXPORT_SYMBOL_GPL(of_css);
-
-/**
- * cgroup_is_descendant - test ancestry
- * @cgrp: the cgroup to be tested
- * @ancestor: possible ancestor of @cgrp
- *
- * Test whether @cgrp is a descendant of @ancestor.  It also returns %true
- * if @cgrp == @ancestor.  This function is safe to call as long as @cgrp
- * and @ancestor are accessible.
- */
-bool cgroup_is_descendant(struct cgroup *cgrp, struct cgroup *ancestor)
-{
-	while (cgrp) {
-		if (cgrp == ancestor)
-			return true;
-		cgrp = cgroup_parent(cgrp);
-	}
-	return false;
-}
 
 static int notify_on_release(const struct cgroup *cgrp)
 {
@@ -1921,6 +1904,7 @@ static int cgroup_setup_root(struct cgroup_root *root, unsigned long ss_mask)
 	if (ret < 0)
 		goto out;
 	root_cgrp->id = ret;
+	root_cgrp->ancestor_ids[0] = ret;
 
 	ret = percpu_ref_init(&root_cgrp->self.refcnt, css_release, 0,
 			      GFP_KERNEL);
@@ -2773,6 +2757,11 @@ static ssize_t __cgroup_procs_write(struct kernfs_open_file *of, char *buf,
 	ret = cgroup_procs_write_permission(tsk, cgrp, of);
 	if (!ret)
 		ret = cgroup_attach_task(cgrp, tsk, threadgroup);
+
+	/* This covers boosting for app launches and app transitions */
+	if (!ret && !threadgroup && !strcmp(of->kn->parent->name, "top-app") &&
+	    task_is_zygote(tsk->parent))
+		cpu_input_boost_kick_max(150);
 
 	put_task_struct(tsk);
 	goto out_unlock_threadgroup;
@@ -4940,11 +4929,11 @@ err_free_css:
 static int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name,
 			umode_t mode)
 {
-	struct cgroup *parent, *cgrp;
+	struct cgroup *parent, *cgrp, *tcgrp;
 	struct cgroup_root *root;
 	struct cgroup_subsys *ss;
 	struct kernfs_node *kn;
-	int ssid, ret;
+	int level, ssid, ret;
 
 	/* Do not accept '\n' to prevent making /proc/<pid>/cgroup unparsable.
 	 */
@@ -4955,9 +4944,11 @@ static int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name,
 	if (!parent)
 		return -ENODEV;
 	root = parent->root;
+	level = parent->level + 1;
 
 	/* allocate the cgroup and its ID, 0 is reserved for the root */
-	cgrp = kzalloc(sizeof(*cgrp), GFP_KERNEL);
+	cgrp = kzalloc(sizeof(*cgrp) +
+		       sizeof(cgrp->ancestor_ids[0]) * (level + 1), GFP_KERNEL);
 	if (!cgrp) {
 		ret = -ENOMEM;
 		goto out_unlock;
@@ -4981,6 +4972,10 @@ static int cgroup_mkdir(struct kernfs_node *parent_kn, const char *name,
 
 	cgrp->self.parent = &parent->self;
 	cgrp->root = root;
+	cgrp->level = level;
+
+	for (tcgrp = cgrp; tcgrp; tcgrp = cgroup_parent(tcgrp))
+		cgrp->ancestor_ids[tcgrp->level] = tcgrp->id;
 
 	if (notify_on_release(parent))
 		set_bit(CGRP_NOTIFY_ON_RELEASE, &cgrp->flags);

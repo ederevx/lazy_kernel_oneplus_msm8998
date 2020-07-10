@@ -93,7 +93,7 @@ static inline void blk_flush_integrity(void)
 }
 #endif
 
-void blk_rq_timed_out_timer(unsigned long data);
+void blk_timeout_work(struct work_struct *work);
 unsigned long blk_rq_timeout(unsigned long timeout);
 void blk_add_timer(struct request *req);
 void blk_delete_timer(struct request *);
@@ -261,9 +261,7 @@ extern int blk_update_nr_requests(struct request_queue *, unsigned int);
  */
 static inline int blk_do_io_stat(struct request *rq)
 {
-	return rq->rq_disk &&
-	       (rq->cmd_flags & REQ_IO_STAT) &&
-		(rq->cmd_type == REQ_TYPE_FS);
+	return false;
 }
 
 /*

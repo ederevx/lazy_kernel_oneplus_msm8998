@@ -472,7 +472,7 @@ static int log_store(int facility, int level,
 	if (ts_nsec > 0)
 		msg->ts_nsec = ts_nsec;
 	else
-		msg->ts_nsec = local_clock();
+		msg->ts_nsec = local_clock() + get_total_sleep_time_nsec();
 	memset(log_dict(msg) + dict_len, 0, pad_len);
 	msg->len = size;
 
@@ -659,10 +659,18 @@ static ssize_t devkmsg_write(struct kiocb *iocb, struct iov_iter *from)
 			endp++;
 			len -= endp - line;
 			line = endp;
+			/* Filter healthd & dashd */
+			if (line[0] == 'h' || line[0] == 'd') {
+				for (u = 0; u < 10; ++u) {
+					if (line[u] == 'd')
+						goto free;
+				}
+			}
 		}
 	}
 
 	printk_emit(facility, level, NULL, 0, "%s", line);
+free:
 	kfree(buf);
 	return ret;
 }
@@ -1059,6 +1067,7 @@ static size_t print_time(u64 ts, char *buf)
 	if (!printk_time)
 		return 0;
 
+	ts += get_total_sleep_time_nsec();
 	rem_nsec = do_div(ts, 1000000000);
 
 	if (!buf)
@@ -1628,7 +1637,7 @@ static bool cont_add(int facility, int level, const char *text, size_t len)
 		cont.facility = facility;
 		cont.level = level;
 		cont.owner = current;
-		cont.ts_nsec = local_clock();
+		cont.ts_nsec = local_clock() + get_total_sleep_time_nsec();
 		cont.flags = 0;
 		cont.cons = 0;
 		cont.flushed = false;
@@ -2115,7 +2124,7 @@ void suspend_console(void)
 {
 	if (!console_suspend_enabled)
 		return;
-	printk("Suspending console(s) (use no_console_suspend to debug)\n");
+	pr_debug("Suspending console(s) (use no_console_suspend to debug)\n");
 	console_lock();
 	console_suspended = 1;
 	up_console_sem();

@@ -450,11 +450,6 @@ static unsigned long msm_cpp_queue_buffer_info(struct cpp_device *cpp_dev,
 	buff->map_info.buff_info = *buffer_info;
 	buff->map_info.buf_fd = buffer_info->fd;
 
-	trace_printk("fd %d index %d native_buff %d ssid %d %d\n",
-		buffer_info->fd, buffer_info->index,
-		buffer_info->native_buff, buff_queue->session_id,
-		buff_queue->stream_id);
-
 	if (buff_queue->security_mode == SECURE_MODE)
 		rc = cam_smmu_get_stage2_phy_addr(cpp_dev->iommu_hdl,
 			buffer_info->fd, CAM_SMMU_MAP_RW,
@@ -484,11 +479,6 @@ static void msm_cpp_dequeue_buffer_info(struct cpp_device *cpp_dev,
 	struct msm_cpp_buffer_map_list_t *buff)
 {
 	int ret = -1;
-
-	trace_printk("fd %d index %d native_buf %d ssid %d %d\n",
-		buff->map_info.buf_fd, buff->map_info.buff_info.index,
-		buff->map_info.buff_info.native_buff, buff_queue->session_id,
-		buff_queue->stream_id);
 
 	if (buff_queue->security_mode == SECURE_MODE)
 		ret = cam_smmu_put_stage2_phy_addr(cpp_dev->iommu_hdl,
@@ -959,14 +949,9 @@ static irqreturn_t msm_cpp_irq(int irq_num, void *data)
 	if (irq_status & 0x8) {
 		tx_level = msm_camera_io_r(cpp_dev->base +
 			MSM_CPP_MICRO_FIFO_TX_STAT) >> 2;
-		if (tx_level < MSM_CPP_TX_FIFO_LEVEL) {
-			for (i = 0; i < tx_level; i++) {
-				tx_fifo[i] = msm_camera_io_r(cpp_dev->base +
-					MSM_CPP_MICRO_FIFO_TX_DATA);
-			}
-		} else {
-			pr_err("Fatal invalid tx level %d", tx_level);
-			goto err;
+		for (i = 0; i < tx_level; i++) {
+			tx_fifo[i] = msm_camera_io_r(cpp_dev->base +
+				MSM_CPP_MICRO_FIFO_TX_DATA);
 		}
 		spin_lock_irqsave(&cpp_dev->tasklet_lock, flags);
 		queue_cmd = &cpp_dev->tasklet_queue_cmd[cpp_dev->taskletq_idx];
@@ -1021,7 +1006,6 @@ static irqreturn_t msm_cpp_irq(int irq_num, void *data)
 		pr_debug("DEBUG_R1: 0x%x\n",
 			msm_camera_io_r(cpp_dev->base + 0x8C));
 	}
-err:
 	msm_camera_io_w(irq_status, cpp_dev->base + MSM_CPP_MICRO_IRQGEN_CLR);
 	return IRQ_HANDLED;
 }
@@ -1633,7 +1617,6 @@ static int msm_cpp_buffer_ops(struct cpp_device *cpp_dev,
 	case VIDIOC_MSM_BUF_MNGR_PUT_BUF:
 	case VIDIOC_MSM_BUF_MNGR_BUF_DONE:
 	case VIDIOC_MSM_BUF_MNGR_GET_BUF:
-	case VIDIOC_MSM_BUF_MNGR_BUF_ERROR:
 	default: {
 		struct msm_buf_mngr_info *buff_mgr_info =
 			(struct msm_buf_mngr_info *)arg;
@@ -2993,8 +2976,8 @@ static int msm_cpp_copy_from_ioctl_ptr(void *dst_ptr,
 		return -EINVAL;
 	}
 
-	/* For compat task, source ptr is in kernel space */
-	if (is_compat_task()) {
+	/* Some of the data is already in kernel space */
+	if ((uintptr_t)ioctl_ptr->ioctl_ptr >= USER_DS) {
 		memcpy(dst_ptr, ioctl_ptr->ioctl_ptr, ioctl_ptr->len);
 		ret = 0;
 	} else {
@@ -3632,7 +3615,7 @@ STREAM_BUFF_END:
 			break;
 		}
 		buff_mgr_info.frame_id = frame_info.frame_id;
-		rc = msm_cpp_buffer_ops(cpp_dev, VIDIOC_MSM_BUF_MNGR_BUF_ERROR,
+		rc = msm_cpp_buffer_ops(cpp_dev, VIDIOC_MSM_BUF_MNGR_BUF_DONE,
 			0x0, &buff_mgr_info);
 		if (rc < 0) {
 			pr_err("error in buf done\n");

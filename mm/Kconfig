@@ -654,19 +654,6 @@ config BALANCE_ANON_FILE_RECLAIM
 	  Swapping anonymous pages out to memory can be efficient enough to justify
 	  treating anonymous and file backed pages equally.
 
-config KSWAPD_CPU_AFFINITY_MASK
-	string "kswapd cpu affinity mask"
-	depends on SMP
-	help
-	  Set the cpu affinity for the kswapd task.
-	  There can be power benefits on certain targets when limiting kswapd
-	  to run only on certain cores.
-	  The cpu affinity bitmask is represented by a hex string where commas
-	  group hex digits into chunks.  Each chunk defines exactly 32 bits of
-	  the resultant bitmask.
-	  For example to limit kswapd to the first 4 cores use the following:
-	  CONFIG_KSWAPD_CPU_AFFINITY_MASK="f"
-
 # For architectures that support deferred memory initialisation
 config ARCH_SUPPORTS_DEFERRED_STRUCT_PAGE_INIT
 	bool
@@ -743,3 +730,29 @@ config PROCESS_RECLAIM
 	 (addr, addr + size-bytes) of the process.
 
 	 Any other vaule is ignored.
+
+config VMSTAT_INTERVAL
+	int "Default interval in seconds to update vmstat"
+	default 1
+
+config ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
+       def_bool n
+
+config SPECULATIVE_PAGE_FAULT
+	bool "Speculative page faults"
+	default y
+	depends on ARCH_SUPPORTS_SPECULATIVE_PAGE_FAULT
+	depends on MMU && SMP
+	help
+	  Try to handle user space page faults without holding the mmap_sem.
+
+	  This should allow better concurrency for massively threaded processes
+	  since the page fault handler will not wait for other thread's memory
+	  layout change to be done, assuming that this change is done in
+	  another part of the process's memory space. This type of page fault
+	  is named speculative page fault.
+
+	  If the speculative page fault fails because a concurrent modification
+	  is detected or because underlying PMD or PTE tables are not yet
+	  allocated, the speculative page fault fails and a classic page fault
+	  is then tried.

@@ -26,11 +26,12 @@
 #include <linux/suspend.h>
 #include <linux/syscore_ops.h>
 #include <linux/ftrace.h>
-#include <linux/rtc.h>
 #include <trace/events/power.h>
 #include <linux/compiler.h>
 #include <linux/moduleparam.h>
 #include <linux/wakeup_reason.h>
+#include <linux/platform_device.h>
+#include "../../drivers/pinctrl/qcom/pinctrl-msm.h"
 
 #include "power.h"
 
@@ -46,6 +47,11 @@ static DECLARE_WAIT_QUEUE_HEAD(suspend_freeze_wait_head);
 
 enum freeze_state __read_mostly suspend_freeze_state;
 static DEFINE_SPINLOCK(suspend_freeze_lock);
+
+static bool sys_sync_completed = false;
+static void sys_sync_work_func(struct work_struct *work);
+static DECLARE_WORK(sys_sync_work, sys_sync_work_func);
+static DECLARE_WAIT_QUEUE_HEAD(sys_sync_wait);
 
 void freeze_set_ops(const struct platform_freeze_ops *ops)
 {
@@ -384,6 +390,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 			trace_suspend_resume(TPS("machine_suspend"),
 				state, false);
 			events_check_enabled = false;
+			need_show_pinctrl_irq = true;
 		} else if (*wakeup) {
 			pm_get_active_wakeup_sources(suspend_abort,
 				MAX_SUSPEND_ABORT_LEN);
@@ -401,6 +408,7 @@ static int suspend_enter(suspend_state_t state, bool *wakeup)
 
  Platform_wake:
 	platform_resume_noirq(state);
+       thaw_fingerprintd();
 	dpm_resume_noirq(PMSG_RESUME);
 
  Platform_early_resume:
@@ -434,7 +442,7 @@ int suspend_devices_and_enter(suspend_state_t state)
 	suspend_test_start();
 	error = dpm_suspend_start(PMSG_SUSPEND);
 	if (error) {
-		pr_err("PM: Some devices failed to suspend, or early wake event detected\n");
+		pr_debug("PM: Some devices failed to suspend, or early wake event detected\n");
 		log_suspend_abort_reason("Some devices failed to suspend, or early wake event detected");
 		goto Recover_platform;
 	}
@@ -477,6 +485,57 @@ static void suspend_finish(void)
 }
 
 /**
+ * Sync the filesystem in seperate workqueue.
+ * Then check it finishing or not periodically and
+ * abort if any wakeup source comes in. That can reduce
+ * the wakeup latency
+ *
+ */
+static void sys_sync_work_func(struct work_struct *work)
+{
+	printk(KERN_INFO "PM: Syncing filesystems ... \n");
+	sys_sync();
+	sys_sync_completed = true;
+	wake_up(&sys_sync_wait);
+}
+
+#ifndef CONFIG_SUSPEND_SKIP_SYNC
+static int sys_sync_queue(void)
+{
+	int work_status = work_busy(&sys_sync_work);
+
+	/*Check if the previous work still running.*/
+	if (!(work_status & WORK_BUSY_PENDING)) {
+		if (work_status & WORK_BUSY_RUNNING) {
+			while (wait_event_timeout(sys_sync_wait, sys_sync_completed,
+						msecs_to_jiffies(100)) == 0) {
+				if (pm_wakeup_pending()) {
+					pr_info("PM: Pre-Syncing abort\n");
+					goto abort;
+				}
+			}
+			pr_info("PM: Pre-Syncing done\n");
+		}
+		sys_sync_completed = false;
+		schedule_work(&sys_sync_work);
+	}
+
+	while (wait_event_timeout(sys_sync_wait, sys_sync_completed,
+					msecs_to_jiffies(100)) == 0) {
+		if (pm_wakeup_pending()) {
+			pr_info("PM: Syncing abort\n");
+			goto abort;
+		}
+	}
+
+	pr_info("PM: Syncing done\n");
+	return 0;
+abort:
+	return -EAGAIN;
+}
+#endif
+
+/**
  * enter_state - Do common work needed to enter system sleep state.
  * @state: System sleep state to enter.
  *
@@ -509,7 +568,10 @@ static int enter_state(suspend_state_t state)
 #ifndef CONFIG_SUSPEND_SKIP_SYNC
 	trace_suspend_resume(TPS("sync_filesystems"), 0, true);
 	printk(KERN_INFO "PM: Syncing filesystems ... ");
-	sys_sync();
+	error = sys_sync_queue();
+	if (error) {
+		goto Unlock;
+	}
 	printk("done.\n");
 	trace_suspend_resume(TPS("sync_filesystems"), 0, false);
 #endif
@@ -537,18 +599,6 @@ static int enter_state(suspend_state_t state)
 	return error;
 }
 
-static void pm_suspend_marker(char *annotation)
-{
-	struct timespec ts;
-	struct rtc_time tm;
-
-	getnstimeofday(&ts);
-	rtc_time_to_tm(ts.tv_sec, &tm);
-	pr_info("PM: suspend %s %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
-		annotation, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
-		tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
-}
-
 /**
  * pm_suspend - Externally visible function for suspending the system.
  * @state: System sleep state to enter.
@@ -563,7 +613,6 @@ int pm_suspend(suspend_state_t state)
 	if (state <= PM_SUSPEND_ON || state >= PM_SUSPEND_MAX)
 		return -EINVAL;
 
-	pm_suspend_marker("entry");
 	error = enter_state(state);
 	if (error) {
 		suspend_stats.fail++;
@@ -571,7 +620,6 @@ int pm_suspend(suspend_state_t state)
 	} else {
 		suspend_stats.success++;
 	}
-	pm_suspend_marker("exit");
 	return error;
 }
 EXPORT_SYMBOL(pm_suspend);

@@ -1606,6 +1606,7 @@ int __init socinfo_init(void)
 	boot_stats_init();
 	socinfo_print();
 	arch_read_hardware_id = msm_read_hardware_id;
+
 	socinfo_init_done = true;
 
 	return 0;

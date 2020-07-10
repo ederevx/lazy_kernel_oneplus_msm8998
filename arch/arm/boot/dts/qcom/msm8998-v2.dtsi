@@ -240,8 +240,7 @@
 		<  1555200 >,
 		<  1670400 >,
 		<  1747200 >,
-		<  1824000 >,
-		<  1900800 >;
+		<  1824000 >;
 
 	qcom,cpufreq-table-4 =
 		<   300000 >,
@@ -272,14 +271,7 @@
 		<  2208000 >,
 		<  2265600 >,
 		<  2304000 >,
-		<  2323200 >,
-		<  2342400 >,
-		<  2361600 >,
-		<  2419200 >,
-		<  2457600 >,
-		<  2476800 >,
-		<  2496000 >,
-		<  2592000 >;
+		<  2323200 >;
 };
 
 &bwmon {
@@ -293,8 +285,7 @@
 			< 1900800 1525 >;
 		cpu-to-dev-map-4 =
 			< 2112000 1525 >,
-			< 2342400 5195 >,
-			< 2496000 13763 >;
+			< 2496000 5195 >;
 		};
 };
 
@@ -1121,10 +1112,10 @@
 	      <0x01fcb24c 0x4>,
 	      <0x00784238 0x4>;
 	reg-names = "qusb_phy_base",
-			"tcsr_clamp_dig_n_1p8",
-			"efuse_addr";
-	qcom,efuse-bit-pos = <16>;
-	qcom,efuse-num-bits = <4>;
+			"tcsr_clamp_dig_n_1p8";
+	//		"efuse_addr";
+//	qcom,efuse-bit-pos = <16>;
+//	qcom,efuse-num-bits = <4>;
 	qcom,qusb-phy-init-seq =
 			/* <value reg_offset> */
 				<0x13 0x04 /* analog_controls_two */

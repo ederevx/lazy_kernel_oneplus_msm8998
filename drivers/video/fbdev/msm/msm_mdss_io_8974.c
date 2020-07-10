@@ -1321,15 +1321,15 @@ static void mdss_dsi_phy_regulator_ctrl(struct mdss_dsi_ctrl_pdata *ctrl,
 				mdss_dsi_20nm_phy_regulator_enable(ctrl);
 				break;
 			default:
-			/*
-			 * For dual dsi case, do not reconfigure dsi phy
-			 * regulator if the other dsi controller is still
-			 * active.
-			 */
-			if (!mdss_dsi_is_hw_config_dual(sdata) ||
-				(other_ctrl && (!other_ctrl->is_phyreg_enabled
-						|| other_ctrl->mmss_clamp)))
-				mdss_dsi_28nm_phy_regulator_enable(ctrl);
+				/*
+				 * For dual dsi case, do not reconfigure dsi phy
+				 * regulator if the other dsi controller is still
+				 * active.
+				 */
+				if (!mdss_dsi_is_hw_config_dual(sdata) ||
+					(other_ctrl && (!other_ctrl->is_phyreg_enabled
+							|| other_ctrl->mmss_clamp)))
+					mdss_dsi_28nm_phy_regulator_enable(ctrl);
 				break;
 			}
 		}
@@ -2343,9 +2343,9 @@ int mdss_dsi_clk_ctrl(struct mdss_dsi_ctrl_pdata *ctrl, void *clk_handle,
 {
 	int rc = 0;
 	struct mdss_dsi_ctrl_pdata *mctrl = NULL;
-	int i, *vote_cnt;
+	int i, *vote_cnt = NULL;
 
-	void *m_clk_handle;
+	void *m_clk_handle = NULL;
 	bool is_ecg = false;
 	int state = MDSS_DSI_CLK_OFF;
 

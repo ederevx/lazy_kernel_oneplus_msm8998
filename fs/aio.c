@@ -504,7 +504,12 @@ static int aio_setup_ring(struct kioctx *ctx)
 	ctx->mmap_size = nr_pages * PAGE_SIZE;
 	pr_debug("attempting mmap of %lu bytes\n", ctx->mmap_size);
 
-	down_write(&mm->mmap_sem);
+	if (down_write_killable(&mm->mmap_sem)) {
+		ctx->mmap_size = 0;
+		aio_free_ring(ctx);
+		return -EINTR;
+	}
+
 	ctx->mmap_base = do_mmap_pgoff(ctx->aio_ring_file, 0, ctx->mmap_size,
 				       PROT_READ | PROT_WRITE,
 				       MAP_SHARED, 0, &unused);
@@ -1284,7 +1289,7 @@ static long read_events(struct kioctx *ctx, long min_nr, long nr,
 			struct io_event __user *event,
 			struct timespec __user *timeout)
 {
-	ktime_t until = { .tv64 = KTIME_MAX };
+	ktime_t until = KTIME_MAX;
 	long ret = 0;
 
 	if (timeout) {
@@ -1310,7 +1315,7 @@ static long read_events(struct kioctx *ctx, long min_nr, long nr,
 	 * the ringbuffer empty. So in practice we should be ok, but it's
 	 * something to be aware of when touching this code.
 	 */
-	if (until.tv64 == 0)
+	if (until == 0)
 		aio_read_events(ctx, min_nr, nr, event, &ret);
 	else
 		wait_event_interruptible_hrtimeout(ctx->wait,
