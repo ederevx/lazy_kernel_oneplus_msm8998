@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2017, 2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -2086,4 +2086,3 @@ struct hdcp_ops *hdcp_1x_start(void *input)
 {
 	return ((struct hdcp_1x *)input)->ops;
 }
-
