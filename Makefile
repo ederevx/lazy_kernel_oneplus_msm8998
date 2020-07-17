@@ -402,6 +402,12 @@ KBUILD_CFLAGS_MODULE  := -DMODULE
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
 CLANG_FLAGS :=
 
+# Set GCC 9 values to match behavior and avoid regression
+KBUILD_CFLAGS	+= --param=inline-min-speedup=15 \
+		   --param=max-inline-insns-single=200 \
+		   --param=max-inline-insns-auto=30 \
+		   --param=early-inlining-insns=14
+
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
