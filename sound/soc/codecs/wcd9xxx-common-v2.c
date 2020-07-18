@@ -610,14 +610,14 @@ static void wcd_clsh_set_hph_mode(struct snd_soc_codec *codec,
 	switch (mode) {
 	case CLS_H_NORMAL:
 		val = 0x00;
-		gain = DAC_GAIN_0P8DB;
+		gain = DAC_GAIN_0DB;
 		ipeak = DELTA_I_50MA;
 		break;
 	case CLS_AB:
 	case CLS_H_LOHIFI:
 	case CLS_H_HIFI:
 		val = 0x08;
-		gain = DAC_GAIN_0P8DB;
+		gain = DAC_GAIN_0DB;
 		ipeak = DELTA_I_50MA;
 		break;
 	case CLS_H_ULP:
