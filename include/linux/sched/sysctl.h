@@ -40,7 +40,6 @@ extern unsigned int sysctl_sched_min_granularity;
 extern unsigned int sysctl_sched_cstate_aware;
 extern unsigned int sysctl_sched_wakeup_granularity;
 extern unsigned int sysctl_sched_child_runs_first;
-extern unsigned int sysctl_sched_cpu_schedtune_bias;
 extern unsigned int sysctl_sched_sync_hint_enable;
 extern unsigned int sysctl_sched_energy_aware;
 #ifdef CONFIG_SCHED_WALT
@@ -94,6 +93,7 @@ extern unsigned int sysctl_sched_cfs_bandwidth_slice;
 
 #ifdef CONFIG_SCHED_TUNE
 extern unsigned int sysctl_sched_cfs_boost;
+extern unsigned int sysctl_sched_cpu_schedtune_bias;
 int sysctl_sched_cfs_boost_handler(struct ctl_table *table, int write,
 				   void __user *buffer, size_t *length,
 				   loff_t *ppos);
