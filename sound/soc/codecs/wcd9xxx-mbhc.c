@@ -146,11 +146,11 @@
  */
 #define WCD9XXX_LINEIN_THRESHOLD 5000000
 
-static int impedance_detect_en;
+static int impedance_detect_en = 1;
 module_param(impedance_detect_en, int,
 			S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(impedance_detect_en, "enable/disable impedance detect");
-static unsigned int z_det_box_car_avg = 1;
+static unsigned int z_det_box_car_avg = 3;
 module_param(z_det_box_car_avg, int,
 			S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(z_det_box_car_avg,
