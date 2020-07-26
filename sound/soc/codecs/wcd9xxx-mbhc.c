@@ -146,7 +146,7 @@
  */
 #define WCD9XXX_LINEIN_THRESHOLD 5000000
 
-static int impedance_detect_en;
+static int impedance_detect_en = 1;
 module_param(impedance_detect_en, int,
 			S_IRUGO | S_IWUSR | S_IWGRP);
 MODULE_PARM_DESC(impedance_detect_en, "enable/disable impedance detect");
