@@ -1,6 +1,9 @@
 /*
  * Copyright (c) 2013-2015, The Linux Foundation. All rights reserved.
  *
+ * Dynamic SchedTune Integration
+ * Copyright (c) 2020, Edrick Vince Sinsuan <sedrickvince@gmail.com>.
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
  * only version 2 as published by the Free Software Foundation.
@@ -13,211 +16,212 @@
 
 #define pr_fmt(fmt) "cpu-boost: " fmt
 
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/cpufreq.h>
-#include <linux/cpu.h>
-#include <linux/sched.h>
-#include <linux/moduleparam.h>
-#include <linux/slab.h>
+#include <linux/fb.h>
 #include <linux/input.h>
+#include <linux/moduleparam.h>
+#include <linux/module.h>
+#include <linux/slab.h>
 #include <linux/time.h>
+#include <linux/cpu-boost.h>
+#include <linux/sched.h>
+#include <linux/sched/sysctl.h>
 
-struct cpu_sync {
-	int cpu;
-	unsigned int input_boost_min;
-	unsigned int input_boost_freq;
+struct boost_val {
+	bool state;
+	struct work_struct enable;
+	struct delayed_work disable;
+	unsigned short duration, stored_duration_ms;
+	unsigned int stored_val;
+	int slot;
 };
 
-static DEFINE_PER_CPU(struct cpu_sync, sync_info);
-static struct workqueue_struct *cpu_boost_wq;
+/* Boost value structures */
+static struct boost_val input, kick;
 
-static struct work_struct input_boost_work;
-static bool input_boost_enabled;
+/* Framebuffer state notifier */
+static struct notifier_block fb_notifier;
+static bool fb_state;
 
-static unsigned int input_boost_ms = 40;
-module_param(input_boost_ms, uint, 0644);
-
-static struct delayed_work input_boost_rem;
-static u64 last_input_time;
-#define MIN_INPUT_INTERVAL (150 * USEC_PER_MSEC)
-
-static int set_input_boost_freq(const char *buf, const struct kernel_param *kp)
-{
-	int i, ntokens = 0;
-	unsigned int val, cpu;
-	const char *cp = buf;
-	bool enabled = false;
-
-	while ((cp = strpbrk(cp + 1, " :")))
-		ntokens++;
-
-	/* single number: apply to all CPUs */
-	if (!ntokens) {
-		if (sscanf(buf, "%u\n", &val) != 1)
-			return -EINVAL;
-		for_each_possible_cpu(i)
-			per_cpu(sync_info, i).input_boost_freq = val;
-		goto check_enable;
-	}
-
-	/* CPU:value pair */
-	if (!(ntokens % 2))
-		return -EINVAL;
-
-	cp = buf;
-	for (i = 0; i < ntokens; i += 2) {
-		if (sscanf(cp, "%u:%u", &cpu, &val) != 2)
-			return -EINVAL;
-		if (cpu >= num_possible_cpus())
-			return -EINVAL;
-
-		per_cpu(sync_info, cpu).input_boost_freq = val;
-		cp = strchr(cp, ' ');
-		cp++;
-	}
-
-check_enable:
-	for_each_possible_cpu(i) {
-		if (per_cpu(sync_info, i).input_boost_freq) {
-			enabled = true;
-			break;
-		}
-	}
-	input_boost_enabled = enabled;
-
-	return 0;
-}
-
-static int get_input_boost_freq(char *buf, const struct kernel_param *kp)
-{
-	int cnt = 0, cpu;
-	struct cpu_sync *s;
-
-	for_each_possible_cpu(cpu) {
-		s = &per_cpu(sync_info, cpu);
-		cnt += snprintf(buf + cnt, PAGE_SIZE - cnt,
-				"%d:%u ", cpu, s->input_boost_freq);
-	}
-	cnt += snprintf(buf + cnt, PAGE_SIZE - cnt, "\n");
-	return cnt;
-}
-
-static const struct kernel_param_ops param_ops_input_boost_freq = {
-	.set = set_input_boost_freq,
-	.get = get_input_boost_freq,
-};
-module_param_cb(input_boost_freq, &param_ops_input_boost_freq, NULL, 0644);
+/* Workqueue structures and state work_struct */
+static struct workqueue_struct *update_state_wq, *input_boost_wq,
+	*kick_boost_wq;
+static struct work_struct update_work;
 
 /*
- * The CPUFREQ_ADJUST notifier is used to override the current policy min to
- * make sure policy min >= boost_min. The cpufreq framework then does the job
- * of enforcing the new policy.
- *
- * The sync kthread needs to run on the CPU in question to avoid deadlocks in
- * the wake up code. Achieve this by binding the thread to the respective
- * CPU. But a CPU going offline unbinds threads from that CPU. So, set it up
- * again each time the CPU comes back up. We can use CPUFREQ_START to figure
- * out a CPU is coming online instead of registering for hotplug notifiers.
+ * global_state - Controls the state of the driver depending on fb_state and
+ * disable_dsboost. Can not be changed by user.
  */
-static int boost_adjust_notify(struct notifier_block *nb, unsigned long val,
-				void *data)
+static bool global_state;
+module_param_named(dsboost_global_state, global_state, bool, 0444);
+
+/*
+ * Modifiable Variables
+ */
+static bool disable_dsboost;
+module_param(disable_dsboost, bool, 0644);
+
+static unsigned int __read_mostly input_sched_boost = 
+	CONFIG_INPUT_SCHED_BOOST;
+static unsigned int __read_mostly kick_sched_boost = 
+	CONFIG_KICK_SCHED_BOOST;
+static unsigned short __read_mostly input_duration_ms = 
+	CONFIG_INPUT_DURATION;
+static unsigned short __read_mostly kick_duration_ms = 
+	CONFIG_KICK_DURATION;
+
+module_param(input_sched_boost, uint, 0644);
+module_param(kick_sched_boost, uint, 0644);
+module_param(input_duration_ms, ushort, 0644);
+module_param(kick_duration_ms, ushort, 0644);
+
+static inline bool set_input_boost(bool enable)
 {
-	struct cpufreq_policy *policy = data;
-	unsigned int cpu = policy->cpu;
-	struct cpu_sync *s = &per_cpu(sync_info, cpu);
-	unsigned int ib_min = s->input_boost_min;
+	if (input.state == enable)
+		return enable;
 
-	switch (val) {
-	case CPUFREQ_ADJUST:
-		if (!ib_min)
-			break;
+	/*
+	 * Only allow boost and prefer_idle to function without bias in order to properly
+	 * assess the capacity of cpus and choose the proper idle cpu for the task.
+	 */
+	do_prefer_idle("top-app", enable);
+	do_prefer_idle("foreground", enable);
 
-		pr_debug("CPU%u policy min before boost: %u kHz\n",
-			 cpu, policy->min);
-		pr_debug("CPU%u boost min: %u kHz\n", cpu, ib_min);
-
-		cpufreq_verify_within_limits(policy, ib_min, UINT_MAX);
-
-		pr_debug("CPU%u policy min after boost: %u kHz\n",
-			 cpu, policy->min);
-		break;
-	}
-
-	return NOTIFY_OK;
+	return enable ? !do_stune_boost("top-app", input.stored_val, &input.slot)
+		: reset_stune_boost("top-app", input.slot);
 }
 
-static struct notifier_block boost_adjust_nb = {
-	.notifier_call = boost_adjust_notify,
-};
-
-static void update_policy_online(void)
+static inline bool set_kick_boost(bool enable)
 {
-	unsigned int i;
+	if (kick.state == enable)
+		return enable;
 
-	/* Re-evaluate policy to trigger adjust notifier for online CPUs */
-	get_online_cpus();
-	for_each_online_cpu(i) {
-		pr_debug("Updating policy for CPU%d\n", i);
-		cpufreq_update_policy(i);
-	}
-	put_online_cpus();
+	/*
+	 * Use idle cpus with high original capacity and bias to big cluster when it
+	 * comes to app launches and transitions in order to speed up the process
+	 * and efficiently consume power.
+	 */
+	sysctl_sched_cpu_schedtune_bias = enable;
+	do_crucial("top-app", enable);
+
+	return enable ? !do_stune_boost("top-app", kick.stored_val, &kick.slot)
+		: reset_stune_boost("top-app", kick.slot);
 }
 
-static void do_input_boost_rem(struct work_struct *work)
+static inline bool check_state(void)
 {
-	unsigned int i;
-	struct cpu_sync *i_sync_info;
+	bool ret;
 
-	/* Reset the input_boost_min for all CPUs in the system */
-	pr_debug("Resetting input boost min for all CPUs\n");
-	for_each_possible_cpu(i) {
-		i_sync_info = &per_cpu(sync_info, i);
-		i_sync_info->input_boost_min = 0;
+	/* Update if disable_dsboost changes */
+	ret = disable_dsboost == global_state;
+	if (ret) {
+		if (!work_pending(&update_work))
+			queue_work(update_state_wq, &update_work);
+		return ret;
 	}
-
-	/* Update policies for all online CPUs */
-	update_policy_online();
+	ret = !global_state || kick.state;
+	return ret;
 }
 
-static void do_input_boost(struct work_struct *work)
+static void trigger_input(struct work_struct *work)
 {
-	unsigned int i;
-	struct cpu_sync *i_sync_info;
-
-	cancel_delayed_work_sync(&input_boost_rem);
-
-	/* Set the input_boost_min for all CPUs in the system */
-	pr_debug("Setting input boost min for all CPUs\n");
-	for_each_possible_cpu(i) {
-		i_sync_info = &per_cpu(sync_info, i);
-		i_sync_info->input_boost_min = i_sync_info->input_boost_freq;
+	if (input_duration_ms != input.stored_duration_ms) {
+		input.stored_duration_ms = input_duration_ms;
+		input.duration = msecs_to_jiffies(input_duration_ms);
 	}
 
-	/* Update policies for all online CPUs */
-	update_policy_online();
+	if (!input.duration)
+		return;
 
-	queue_delayed_work(cpu_boost_wq, &input_boost_rem,
-					msecs_to_jiffies(input_boost_ms));
+	mod_delayed_work(input_boost_wq, &input.disable, input.duration);
+
+	if (input_sched_boost != input.stored_val) {
+		if (input_sched_boost <= 0 || input_sched_boost > 100)
+			input_sched_boost = CONFIG_INPUT_SCHED_BOOST;
+
+		input.stored_val = input_sched_boost;
+		/* If boost is already active, let's just update boost value */
+		if (input.state) {
+			reset_stune_boost("top-app", input.slot);
+			do_stune_boost("top-app", input_sched_boost, &input.slot);
+			return;
+		}
+	}
+
+	input.state = set_input_boost(1);
+}
+
+static void trigger_kick(struct work_struct *work)
+{
+	if (kick_duration_ms != kick.stored_duration_ms) {
+		kick.stored_duration_ms = kick_duration_ms;
+		kick.duration = msecs_to_jiffies(kick_duration_ms);
+	}
+
+	if (!kick.duration)
+		return;
+
+	mod_delayed_work(kick_boost_wq, &kick.disable, kick.duration);
+
+	if (kick_sched_boost != kick.stored_val) {
+		if (kick_sched_boost <= 0 || kick_sched_boost > 100)
+			kick_sched_boost = CONFIG_KICK_SCHED_BOOST;
+
+		kick.stored_val = kick_sched_boost;
+		/* If boost is already active, let's just update boost value */
+		if (kick.state) {
+			reset_stune_boost("top-app", kick.slot);
+			do_stune_boost("top-app", kick_sched_boost, &kick.slot);
+			return;
+		}
+	}
+
+	kick.state = set_kick_boost(1);
+}
+
+static void input_remove(struct work_struct *work)
+{
+	input.state = set_input_boost(0);
+}
+
+static void kick_remove(struct work_struct *work)
+{
+	kick.state = set_kick_boost(0);
+}
+
+static void update_state(struct work_struct *work)
+{
+	bool stored_fbs = fb_state;
+
+	/*
+	 * Set dsboost and schedtune state according to fb_state
+	 * or stored_boost value.
+	 */
+	global_state = (disable_dsboost || !stored_fbs) ? 0 : 1;
+	if (!global_state) {
+		/* Drain workqueues if dsboost_state is off */
+		if (input.state) {
+			input.state = set_input_boost(0);
+			drain_workqueue(input_boost_wq);
+		}
+		if (kick.state) {
+			kick.state = set_kick_boost(0);
+			drain_workqueue(kick_boost_wq);
+		}
+	}
+	disable_schedtune_boost(!global_state);
+}
+
+void cpuboost_kick(void)
+{
+	if (!check_state() && !work_pending(&kick.enable))
+		queue_work(kick_boost_wq, &kick.enable);
 }
 
 static void cpuboost_input_event(struct input_handle *handle,
 		unsigned int type, unsigned int code, int value)
 {
-	u64 now;
-
-	if (!input_boost_enabled)
-		return;
-
-	now = ktime_to_us(ktime_get());
-	if (now - last_input_time < MIN_INPUT_INTERVAL)
-		return;
-
-	if (work_pending(&input_boost_work))
-		return;
-
-	queue_work(cpu_boost_wq, &input_boost_work);
-	last_input_time = ktime_to_us(ktime_get());
+	if (!check_state() && !work_pending(&input.enable))
+		queue_work(input_boost_wq, &input.enable);
 }
 
 static int cpuboost_input_connect(struct input_handler *handler,
@@ -291,25 +295,70 @@ static struct input_handler cpuboost_input_handler = {
 	.id_table       = cpuboost_ids,
 };
 
-static int cpu_boost_init(void)
+static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
+			  void *data)
 {
-	int cpu, ret;
-	struct cpu_sync *s;
+	int *blank = ((struct fb_event *) data)->data;
+	bool new_state = (*blank == FB_BLANK_UNBLANK) ? 1 : 0;
 
-	cpu_boost_wq = alloc_workqueue("cpuboost_wq", WQ_HIGHPRI, 0);
-	if (!cpu_boost_wq)
-		return -EFAULT;
+	if (action != FB_EARLY_EVENT_BLANK || new_state == fb_state)
+		return NOTIFY_OK;
 
-	INIT_WORK(&input_boost_work, do_input_boost);
-	INIT_DELAYED_WORK(&input_boost_rem, do_input_boost_rem);
+	fb_state = new_state;
 
-	for_each_possible_cpu(cpu) {
-		s = &per_cpu(sync_info, cpu);
-		s->cpu = cpu;
-	}
-	cpufreq_register_notifier(&boost_adjust_nb, CPUFREQ_POLICY_NOTIFIER);
+	if (!work_pending(&update_work))
+		queue_work(update_state_wq, &update_work);
+
+	return NOTIFY_OK;
+}
+
+static void destroy_boost_workqueues(void)
+{
+	destroy_workqueue(input_boost_wq);
+	destroy_workqueue(kick_boost_wq);
+	destroy_workqueue(update_state_wq);
+}
+
+static void __exit cpu_boost_exit(void)
+{
+	input_unregister_handler(&cpuboost_input_handler);
+	fb_unregister_client(&fb_notifier);
+	destroy_boost_workqueues();
+}
+
+static int __init cpu_boost_init(void)
+{
+	int ret;
+
+	input_boost_wq = alloc_ordered_workqueue("input_boost_wq", WQ_FREEZABLE);
+	kick_boost_wq = alloc_ordered_workqueue("kick_boost_wq", WQ_FREEZABLE);
+	update_state_wq = alloc_ordered_workqueue("update_state_wq", 0);
+	if (!input_boost_wq || !kick_boost_wq || !update_state_wq)
+		return -ENOMEM;
+
+	INIT_WORK(&input.enable, trigger_input);
+	INIT_WORK(&kick.enable, trigger_kick);
+	INIT_DELAYED_WORK(&input.disable, input_remove);
+	INIT_DELAYED_WORK(&kick.disable, kick_remove);
+	INIT_WORK(&update_work, update_state);
+
 	ret = input_register_handler(&cpuboost_input_handler);
+	if (ret)
+		goto err_wq;
+
+	fb_notifier.notifier_call = fb_notifier_cb;
+	fb_notifier.priority = INT_MAX;
+	ret = fb_register_client(&fb_notifier);
+	if (ret)
+		goto err_input;
+
+	return 0;
+err_input:
+	input_unregister_handler(&cpuboost_input_handler);
+err_wq:
+	destroy_boost_workqueues();
 
 	return ret;
 }
 late_initcall(cpu_boost_init);
+module_exit(cpu_boost_exit);

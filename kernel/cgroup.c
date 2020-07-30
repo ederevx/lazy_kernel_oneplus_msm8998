@@ -59,6 +59,10 @@
 #include <linux/delay.h>
 #include <linux/cpuset.h>
 #include <linux/atomic.h>
+#ifdef CONFIG_CPU_BOOST
+#include <linux/binfmts.h>
+#include <linux/cpu-boost.h>
+#endif
 
 /*
  * pidlists linger the following amount before being destroyed.  The goal
@@ -2755,6 +2759,13 @@ static ssize_t __cgroup_procs_write(struct kernfs_open_file *of, char *buf,
 	ret = cgroup_procs_write_permission(tsk, cgrp, of);
 	if (!ret)
 		ret = cgroup_attach_task(cgrp, tsk, threadgroup);
+
+#ifdef CONFIG_CPU_BOOST
+	/* This covers boosting for app launches and app transitions */
+	if (!ret && !threadgroup && !strcmp(of->kn->parent->name, "top-app") &&
+	    task_is_zygote(tsk->parent))
+		cpuboost_kick();
+#endif
 
 	put_task_struct(tsk);
 	goto out_unlock_threadgroup;

@@ -226,17 +226,6 @@ config CPU_FREQ_GOV_CONSERVATIVE
 
 	  If in doubt, say N.
 
-config CPU_BOOST
-	tristate "Event base short term CPU freq boost"
-	depends on CPU_FREQ
-	help
-	  This driver boosts the frequency of one or more CPUs based on
-	  various events that might occur in the system. As of now, the
-	  events it reacts to are:
-	  - Migration of important threads from one CPU to another.
-
-	  If in doubt, say N.
-
 config CPU_FREQ_GOV_SCHEDUTIL
 	bool "'schedutil' cpufreq policy governor"
 	depends on CPU_FREQ && SMP
@@ -253,6 +242,56 @@ config CPU_FREQ_GOV_SCHEDUTIL
 	  both cases.
 
 	  If in doubt, say N.
+
+config CPU_BOOST
+	tristate "Dynamic CPU sched_boost driver"
+	depends on DYNAMIC_STUNE_BOOST
+	help
+	  This driver boosts the frequency of one or more CPUs using dynamic
+	  schedtune based on various events that might occur in the system.
+	  As of now, the events it reacts to are:
+	  - An input event (touchscreen, physical buttons).
+	  - Migration of a zygote to top-app cgroup.
+
+	  If in doubt, say N.
+
+if CPU_BOOST
+
+config INPUT_SCHED_BOOST
+	int "Default Input boost level"
+	range 1 100
+	default "5"
+	help
+	  Default SchedTune boost value for top-app that will be set at input.
+
+config KICK_SCHED_BOOST
+	int "Default Kick boost level"
+	range 1 100
+	default "5"
+	help
+	  Default SchedTune boost value for top-app that will be set at custom 
+	  events, e.g. app launches and transitions.
+
+config INPUT_DURATION
+	int "Input boost duration in milliseconds"
+	range 0 10000
+	default "5000"
+	help
+	  Default total duration to stune boost after input.
+	
+	  Set 0 to disable by default.
+
+config KICK_DURATION
+	int "Kick boost duration in milliseconds"
+	range 0 10000
+	default "1500"
+	help
+	  Default total duration to stune boost at custom events set by the 
+	  developer.
+
+	  Set 0 to disable by default.
+
+endif
 
 comment "CPU frequency scaling drivers"
 
