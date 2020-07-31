@@ -60,6 +60,14 @@ module_param_named(dsboost_global_state, global_state, bool, 0444);
 static bool disable_dsboost;
 module_param(disable_dsboost, bool, 0644);
 
+static bool __read_mostly dsboost_input_state =
+	CONFIG_INPUT_BOOST;
+module_param(dsboost_input_state, bool, 0644);
+
+static bool __read_mostly dsboost_kick_state = 
+	CONFIG_KICK_BOOST;
+module_param(dsboost_kick_state, bool, 0644);
+
 static unsigned int __read_mostly input_sched_boost = 
 	CONFIG_INPUT_SCHED_BOOST;
 static unsigned int __read_mostly kick_sched_boost = 
@@ -109,28 +117,28 @@ static inline bool set_kick_boost(bool enable)
 
 static inline bool check_state(void)
 {
-	bool ret;
-
 	/* Update if disable_dsboost changes */
-	ret = disable_dsboost == global_state;
-	if (ret) {
+	if (disable_dsboost == global_state) {
 		if (!work_pending(&update_work))
 			queue_work(update_state_wq, &update_work);
-		return ret;
+		return 1;
 	}
-	ret = !global_state || kick.state;
-	return ret;
+
+	if (!global_state || kick.state)
+		return 1;
+
+	return 0;
 }
 
 static void trigger_input(struct work_struct *work)
 {
 	if (input_duration_ms != input.stored_duration_ms) {
+		if (input_duration_ms < 10)
+			input_duration_ms = CONFIG_INPUT_DURATION;
+
 		input.stored_duration_ms = input_duration_ms;
 		input.duration = msecs_to_jiffies(input_duration_ms);
 	}
-
-	if (!input.duration)
-		return;
 
 	mod_delayed_work(input_boost_wq, &input.disable, input.duration);
 
@@ -153,12 +161,12 @@ static void trigger_input(struct work_struct *work)
 static void trigger_kick(struct work_struct *work)
 {
 	if (kick_duration_ms != kick.stored_duration_ms) {
+		if (kick_duration_ms < 10)
+			kick_duration_ms = CONFIG_KICK_DURATION;
+
 		kick.stored_duration_ms = kick_duration_ms;
 		kick.duration = msecs_to_jiffies(kick_duration_ms);
 	}
-
-	if (!kick.duration)
-		return;
 
 	mod_delayed_work(kick_boost_wq, &kick.disable, kick.duration);
 
@@ -213,6 +221,14 @@ static void update_state(struct work_struct *work)
 
 void cpuboost_kick(void)
 {
+	if (!dsboost_kick_state) {
+		if (kick.state) {
+			kick.state = set_kick_boost(0);
+			drain_workqueue(kick_boost_wq);
+		}
+		return;
+	}
+
 	if (!check_state() && !work_pending(&kick.enable))
 		queue_work(kick_boost_wq, &kick.enable);
 }
@@ -220,6 +236,14 @@ void cpuboost_kick(void)
 static void cpuboost_input_event(struct input_handle *handle,
 		unsigned int type, unsigned int code, int value)
 {
+	if (!dsboost_input_state) {
+		if (input.state) {
+			input.state = set_input_boost(0);
+			drain_workqueue(input_boost_wq);
+		}
+		return;
+	}
+
 	if (!check_state() && !work_pending(&input.enable))
 		queue_work(input_boost_wq, &input.enable);
 }

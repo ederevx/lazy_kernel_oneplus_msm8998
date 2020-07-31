@@ -257,12 +257,32 @@ config CPU_BOOST
 
 if CPU_BOOST
 
+config INPUT_BOOST
+	bool "Default Input sched_boost state"
+	default y
+	help
+	  This enables/disable input sched_boost at input by default.
+
 config INPUT_SCHED_BOOST
 	int "Default Input boost level"
 	range 1 100
 	default "5"
 	help
 	  Default SchedTune boost value for top-app that will be set at input.
+
+config INPUT_DURATION
+	int "Input boost duration in milliseconds"
+	depends on INPUT_BOOST
+	range 10 10000
+	default "5000"
+	help
+	  Default total duration to stune boost after input.
+
+config KICK_BOOST
+	bool "Default Kick sched_boost state"
+	default y
+	help
+	  This enables/disable kick sched_boost at custom events by default.
 
 config KICK_SCHED_BOOST
 	int "Default Kick boost level"
@@ -272,24 +292,14 @@ config KICK_SCHED_BOOST
 	  Default SchedTune boost value for top-app that will be set at custom 
 	  events, e.g. app launches and transitions.
 
-config INPUT_DURATION
-	int "Input boost duration in milliseconds"
-	range 0 10000
-	default "5000"
-	help
-	  Default total duration to stune boost after input.
-	
-	  Set 0 to disable by default.
-
 config KICK_DURATION
 	int "Kick boost duration in milliseconds"
-	range 0 10000
+	depends on KICK_BOOST
+	range 10 10000
 	default "1500"
 	help
 	  Default total duration to stune boost at custom events set by the 
 	  developer.
-
-	  Set 0 to disable by default.
 
 endif
 
