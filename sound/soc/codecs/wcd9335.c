@@ -3704,6 +3704,10 @@ static int tasha_get_compander(struct snd_kcontrol *kcontrol,
 		    kcontrol->private_value)->shift;
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
 
+	/* Disable companders unless CLS_H_LP is set for calls */
+	if (tasha->hph_mode != CLS_H_LP)
+		tasha->comp_enabled[comp] = 0;
+
 	ucontrol->value.integer.value[0] = tasha->comp_enabled[comp];
 	return 0;
 }
@@ -3716,6 +3720,10 @@ static int tasha_set_compander(struct snd_kcontrol *kcontrol,
 	int comp = ((struct soc_multi_mixer_control *)
 		    kcontrol->private_value)->shift;
 	int value = ucontrol->value.integer.value[0];
+
+	/* Disable companders unless CLS_H_LP is set for calls */
+	if (tasha->hph_mode != CLS_H_LP)
+		value = 0;
 
 	pr_debug("%s: Compander %d enable current %d, new %d\n",
 		 __func__, comp + 1, tasha->comp_enabled[comp], value);
@@ -7938,6 +7946,10 @@ static int tasha_rx_hph_mode_get(struct snd_kcontrol *kcontrol,
 	struct snd_soc_codec *codec = snd_soc_kcontrol_codec(kcontrol);
 	struct tasha_priv *tasha = snd_soc_codec_get_drvdata(codec);
 
+	/* Set to CLS_AB unless CLS_H_LP is set for calls */
+	if (tasha->hph_mode != CLS_H_LP)
+		tasha->hph_mode = CLS_AB;
+
 	ucontrol->value.integer.value[0] = tasha->hph_mode;
 	return 0;
 }
@@ -7954,11 +7966,13 @@ static int tasha_rx_hph_mode_put(struct snd_kcontrol *kcontrol,
 	dev_dbg(codec->dev, "%s: mode: %d\n",
 		__func__, mode_val);
 
-	if (mode_val == 0) {
-		dev_warn(codec->dev, "%s:Invalid HPH Mode, default to Cls-H HiFi\n",
+	/* Set to CLS_AB unless CLS_H_LP is set for calls */
+	if (tasha->hph_mode != CLS_H_LP) {
+		dev_dbg(codec->dev, "%s:Override HPH Mode, set to Cls-AB\n",
 			__func__);
-		mode_val = CLS_H_HIFI;
+		mode_val = CLS_AB;
 	}
+
 	tasha->hph_mode = mode_val;
 	return 0;
 }
@@ -8562,12 +8576,10 @@ static const struct soc_enum amic_pwr_lvl_enum =
 static const struct snd_kcontrol_new tasha_snd_controls[] = {
 	SOC_SINGLE_SX_TLV("RX0 Digital Volume", WCD9335_CDC_RX0_RX_VOL_CTL,
 		0, -84, 40, digital_gain), /* -84dB min - 40dB max */
-#ifndef CONFIG_SOUND_CONTROL
 	SOC_SINGLE_SX_TLV("RX1 Digital Volume", WCD9335_CDC_RX1_RX_VOL_CTL,
 		0, -84, 40, digital_gain),
 	SOC_SINGLE_SX_TLV("RX2 Digital Volume", WCD9335_CDC_RX2_RX_VOL_CTL,
 		0, -84, 40, digital_gain),
-#endif
 	SOC_SINGLE_SX_TLV("RX3 Digital Volume", WCD9335_CDC_RX3_RX_VOL_CTL,
 		0, -84, 40, digital_gain),
 	SOC_SINGLE_SX_TLV("RX4 Digital Volume", WCD9335_CDC_RX4_RX_VOL_CTL,
@@ -8583,14 +8595,12 @@ static const struct snd_kcontrol_new tasha_snd_controls[] = {
 	SOC_SINGLE_SX_TLV("RX0 Mix Digital Volume",
 			  WCD9335_CDC_RX0_RX_VOL_MIX_CTL,
 			  0, -84, 40, digital_gain), /* -84dB min - 40dB max */
-#ifndef CONFIG_SOUND_CONTROL
 	SOC_SINGLE_SX_TLV("RX1 Mix Digital Volume",
 			  WCD9335_CDC_RX1_RX_VOL_MIX_CTL,
 			  0, -84, 40, digital_gain), /* -84dB min - 40dB max */
 	SOC_SINGLE_SX_TLV("RX2 Mix Digital Volume",
 			  WCD9335_CDC_RX2_RX_VOL_MIX_CTL,
 			  0, -84, 40, digital_gain), /* -84dB min - 40dB max */
-#endif
 	SOC_SINGLE_SX_TLV("RX3 Mix Digital Volume",
 			  WCD9335_CDC_RX3_RX_VOL_MIX_CTL,
 			  0, -84, 40, digital_gain), /* -84dB min - 40dB max */
@@ -13650,42 +13660,6 @@ static struct regulator *tasha_codec_find_ondemand_regulator(
 #ifdef CONFIG_SOUND_CONTROL
 static struct snd_soc_codec *sound_control_codec_ptr;
 
-static ssize_t headphone_gain_show(struct kobject *kobj,
-		struct kobj_attribute *attr, char *buf)
-{
-	return snprintf(buf, PAGE_SIZE, "%d %d\n",
-		snd_soc_read(sound_control_codec_ptr, WCD9335_CDC_RX1_RX_VOL_MIX_CTL),
-		snd_soc_read(sound_control_codec_ptr, WCD9335_CDC_RX2_RX_VOL_MIX_CTL)
-	);
-}
-
-static ssize_t headphone_gain_store(struct kobject *kobj,
-		struct kobj_attribute *attr, const char *buf, size_t count)
-{
-
-	int input_l, input_r;
-
-	sscanf(buf, "%d %d", &input_l, &input_r);
-
-	if (input_l < -84 || input_l > 20)
-		input_l = 0;
-
-	if (input_r < -84 || input_r > 20)
-		input_r = 0;
-
-	snd_soc_write(sound_control_codec_ptr, WCD9335_CDC_RX1_RX_VOL_MIX_CTL, input_l);
-	snd_soc_write(sound_control_codec_ptr, WCD9335_CDC_RX2_RX_VOL_MIX_CTL, input_r);
-	snd_soc_write(sound_control_codec_ptr, WCD9335_CDC_RX1_RX_VOL_CTL, input_l);
-	snd_soc_write(sound_control_codec_ptr, WCD9335_CDC_RX2_RX_VOL_CTL, input_r);
-
-	return count;
-}
-
-static struct kobj_attribute headphone_gain_attribute =
-	__ATTR(headphone_gain, 0664,
-		headphone_gain_show,
-		headphone_gain_store);
-
 static ssize_t mic_gain_show(struct kobject *kobj,
 		struct kobj_attribute *attr, char *buf)
 {
@@ -13741,7 +13715,6 @@ static struct kobj_attribute earpiece_gain_attribute =
 		earpiece_gain_store);
 
 static struct attribute *sound_control_attrs[] = {
-		&headphone_gain_attribute.attr,
 		&mic_gain_attribute.attr,
 		&earpiece_gain_attribute.attr,
 		NULL,
@@ -14589,7 +14562,7 @@ pr_err("%s snd_soc_register_codec\n", __func__);
 	sound_control_kobj = kobject_create_and_add("sound_control", kernel_kobj);
 	if (sound_control_kobj == NULL) {
 		pr_warn("%s kobject create failed!\n", __func__);
-        }
+	}
 
 	ret = sysfs_create_group(sound_control_kobj, &sound_control_attr_group);
         if (ret) {
