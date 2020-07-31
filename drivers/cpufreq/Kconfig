@@ -272,7 +272,6 @@ config INPUT_SCHED_BOOST
 
 config INPUT_DURATION
 	int "Input boost duration in milliseconds"
-	depends on INPUT_BOOST
 	range 10 10000
 	default "5000"
 	help
@@ -294,7 +293,6 @@ config KICK_SCHED_BOOST
 
 config KICK_DURATION
 	int "Kick boost duration in milliseconds"
-	depends on KICK_BOOST
 	range 10 10000
 	default "1500"
 	help
