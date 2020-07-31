@@ -639,7 +639,7 @@ static SOC_ENUM_SINGLE_EXT_DECL(mi2s_tx_format, bit_format_text);
 static SOC_ENUM_SINGLE_EXT_DECL(hifi_function, hifi_text);
 
 static struct platform_device *spdev;
-static int msm_hifi_control;
+static int msm_hifi_control = MSM_HIFI_ON;
 
 static bool is_initial_boot;
 static bool codec_reg_done;
