@@ -7,115 +7,104 @@
 
 #include "flicker_free.h"
 
-#define PROC_NAME "flicker_free"
+static struct proc_dir_entry *root_entry, *enabled, *minbright;
 
-#define PROC_DIR_NAME "flicker_free"
-#define MIN_BRIGHTNESS "min_brightness"
-
-struct proc_dir_entry *root_entry;
-
-struct proc_dir_entry *enabled, *minbright;
-
-static int show_ff_enabled( struct seq_file *seq, void *v)
+static int show_ff_enabled(struct seq_file *seq, void *v)
 {
-        seq_printf(seq, "%d\n", (if_flicker_free_enabled()?1:0));
-        return 0;
+	seq_printf(seq, "%d\n", if_flicker_free_enabled() ? 1 : 0);
+	return 0;
 }
 
 static int my_open_ff_enabled(struct inode *inode, struct file *file)
 {
-    return single_open(file, show_ff_enabled, NULL);
+	return single_open(file, show_ff_enabled, NULL);
 }
 
-static ssize_t my_write_procmem( struct file *file, const char __user *buffer,
+static ssize_t my_write_procmem(struct file *file, const char __user *buffer,
                             size_t count, loff_t *pos)
 {
-    int value;
-    value = 0;
-    get_user(value,buffer);
-    switch (value)
-    {
-    case '0':
-        set_flicker_free(false);
-        break;
-    
-    default:
-        set_flicker_free(true);
-        break;
-    }
-    return count;
+	int value = 0;
+	get_user(value, buffer);
+	set_flicker_free(value != '0');
+	return count;
 }
 
-static ssize_t my_write_procbright( struct file *file, const char __user *buffer,
+static ssize_t my_write_procbright(struct file *file, const char __user *buffer,
                             size_t count, loff_t *pos)
 {
-    int value = 0;
-    char *tmp = kzalloc((count+1), GFP_KERNEL);  
-    if(!tmp)  
-        return -ENOMEM;  
-    if(copy_from_user(tmp, buffer, count))  
-    {  
-        kfree(tmp);  
-        return EFAULT;  
-    }  
-    if(!kstrtoint(tmp,10,&value))
-    {
-        set_elvss_off_threshold(value);
-    }else{
-        kfree(tmp);
-        return EFAULT;
-    }
-    kfree(tmp);
-    return count;
+	int ret, value = 0;
+	char *tmp = kzalloc((count + 1), GFP_KERNEL);
+
+	if (!tmp)
+		return -ENOMEM;
+
+	ret = copy_from_user(tmp, buffer, count);
+	if (ret)
+		goto end;
+
+	ret = kstrtoint(tmp, 10, &value);
+	if (ret)
+		goto end;
+
+	set_elvss_off_threshold(value);
+end:
+	kfree(tmp);
+	return ret ? EFAULT : count;
 }
 
-static int show_procbright( struct seq_file *seq, void *v)
+static int show_procbright(struct seq_file *seq, void *v)
 {
-    seq_printf(seq, "%d\n", get_elvss_off_threshold());
-    return 0;
+	seq_printf(seq, "%d\n", get_elvss_off_threshold());
+	return 0;
 }
 
 static int my_open_procbright(struct inode *inode, struct file *file)
 {
-    return single_open(file, show_procbright, NULL);
+	return single_open(file, show_procbright, NULL);
 }
 
 static const struct file_operations proc_file_fops_enable = {
-    .owner = THIS_MODULE,
-    .open = my_open_ff_enabled,
-    .read = seq_read,
-    .write = my_write_procmem,
-    .llseek = seq_lseek,
-    .release = single_release,
+	.owner = THIS_MODULE,
+	.open = my_open_ff_enabled,
+	.read = seq_read,
+	.write = my_write_procmem,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
 static const struct file_operations proc_file_fops_minbright = {
-    .owner = THIS_MODULE,
-    .open = my_open_procbright,
-    .read = seq_read,
-    .write = my_write_procbright,
-    .llseek = seq_lseek,
-    .release = single_release,
+	.owner = THIS_MODULE,
+	.open = my_open_procbright,
+	.read = seq_read,
+	.write = my_write_procbright,
+	.llseek = seq_lseek,
+	.release = single_release,
 };
 
-static int __init init( void )
+static int __init ff_enable_init(void)
 {
-    root_entry = proc_mkdir(PROC_DIR_NAME, NULL);
-    enabled = proc_create(PROC_NAME, 0x0666, root_entry, &proc_file_fops_enable);
-    minbright = proc_create(MIN_BRIGHTNESS, 0x0666, root_entry, &proc_file_fops_minbright);
-    if (!enabled && !minbright) {
-        return ( -EINVAL );
-    }
+	root_entry = proc_mkdir("flicker_free", NULL);
 
-    return 0;
+	enabled = proc_create("flicker_free", 0x0666, root_entry,
+		&proc_file_fops_enable);
+	if (!enabled)
+		return -EINVAL;
+
+	minbright = proc_create("min_brightness", 0x0666, root_entry,
+		&proc_file_fops_minbright);
+	if (!minbright)
+		return -EINVAL;
+
+	return 0;
 }
 
-static void __exit cleanup( void )
+static void __exit ff_enable_exit(void)
 {
-        remove_proc_entry(PROC_NAME, root_entry);
-        remove_proc_entry(MIN_BRIGHTNESS, root_entry);
+	if (enabled)
+		remove_proc_entry("flicker_free", root_entry);
+	if (minbright)
+		remove_proc_entry("min_brightness", root_entry);
 }
 
-module_init( init );
-module_exit( cleanup );
-
+module_init(ff_enable_init);
+module_exit(ff_enable_exit);
