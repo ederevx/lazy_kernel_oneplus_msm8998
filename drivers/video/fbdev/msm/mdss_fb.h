@@ -26,8 +26,6 @@
 
 #ifdef CONFIG_FLICKER_FREE
 #include "flicker_free.h"
-static struct msm_fb_data_type *ff_mfd_copy;
-static u32 ff_bkl_lvl_cpy;
 struct msm_fb_data_type *get_mfd_copy(void);
 u32 get_bkl_lvl(void);
 #endif

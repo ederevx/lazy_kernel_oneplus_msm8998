@@ -3881,7 +3881,7 @@ static void pp_update_pcc_regs(char __iomem *addr,
 	writel_relaxed(cfg_ptr->b.rgb_1, addr + 8);
 }
 
-static u32 pcc_rescale(u32 kernel, u32 user)
+static u32 pcc_rescale(u32 kernel, u32 user, bool multiplier)
 {
 	u32 val = 0;
 
@@ -3889,8 +3889,22 @@ static u32 pcc_rescale(u32 kernel, u32 user)
 		kernel = 32768;
 	if (user == 0 || user > 32768)
 		user = 32768;
+
 	val = (kernel * user) / 32768;
-	return val < 2560 ? 2560 : val;
+	if (val < 2560)
+		val = 2560;
+
+	return multiplier ? (val * 3) / 4 : val;
+}
+
+static inline u32 pcc_assess(u32 kernel, u32 user, bool *cross)
+{
+	bool ret = user > 0 && user < 32768;
+
+	if (ret && !*cross)
+		*cross = ret;
+
+	return ret ? pcc_rescale(kernel, user, true) : 0;
 }
 
 static void pcc_v1_7_combine(struct mdp_pcc_data_v1_7 **kernel,
@@ -3898,52 +3912,67 @@ static void pcc_v1_7_combine(struct mdp_pcc_data_v1_7 **kernel,
 		struct mdp_pcc_data_v1_7 **real)
 {
 	struct mdp_pcc_data_v1_7 *real_cpy;
+	u32 k_red, k_green, k_blue;
+	bool r_cross, g_cross, b_cross;
+
 	real_cpy = kzalloc(sizeof(struct mdp_pcc_data_v1_7), GFP_USER);
-	if (!(*real)) {
+
+	if (!*real) {
 		*real = kzalloc(sizeof(struct mdp_pcc_data_v1_7), GFP_USER);
-		if (!(*real)) {
+		if (!*real) {
 			pr_err("%s: alloc failed!", __func__);
 			return;
 		}
 	}
-	if(kernelpcc_en&&(*kernel)&&userpcc_en&&(*user)){
-		real_cpy->r.c = (*user)->r.c? pcc_rescale((*kernel)->r.r, (*user)->r.c)*3/4: 0;
-		real_cpy->r.r = (*user)->r.g? pcc_rescale((*kernel)->r.r, (*user)->r.r)*3/4: pcc_rescale((*kernel)->r.r, (*user)->r.r);
-		real_cpy->r.g = (*user)->r.g? pcc_rescale((*kernel)->r.r, (*user)->r.g)*3/4: 0;
-		real_cpy->r.b = (*user)->r.b? pcc_rescale((*kernel)->r.r, (*user)->r.b)*3/4: 0;
-		real_cpy->r.rg = (*user)->r.rg? pcc_rescale((*kernel)->r.r, (*user)->r.rg)*3/4: 0;
-		real_cpy->r.gb = (*user)->r.gb? pcc_rescale((*kernel)->r.r, (*user)->r.gb)*3/4: 0;
-		real_cpy->r.rb = (*user)->r.rb? pcc_rescale((*kernel)->r.r, (*user)->r.rb)*3/4: 0;
-		real_cpy->r.rgb = (*user)->r.rgb? pcc_rescale((*kernel)->r.r, (*user)->r.rgb)*3/4: 0;
-		real_cpy->g.c = (*user)->g.c? pcc_rescale((*kernel)->r.r, (*user)->g.c)*3/4: 0;
-		real_cpy->g.g = (*user)->g.r? pcc_rescale((*kernel)->r.r, (*user)->g.g)*3/4: pcc_rescale((*kernel)->r.r, (*user)->g.g);
-		real_cpy->g.r = (*user)->g.r? pcc_rescale((*kernel)->r.r, (*user)->g.r)*3/4: 0;
-		real_cpy->g.b = (*user)->g.b? pcc_rescale((*kernel)->r.r, (*user)->g.b)*3/4: 0;
-		real_cpy->g.rg = (*user)->g.rg? pcc_rescale((*kernel)->r.r, (*user)->g.rg)*3/4: 0;
-		real_cpy->g.gb = (*user)->g.gb? pcc_rescale((*kernel)->r.r, (*user)->g.gb)*3/4: 0;
-		real_cpy->g.rb = (*user)->g.rb? pcc_rescale((*kernel)->r.r, (*user)->g.rb)*3/4: 0;
-		real_cpy->g.rgb = (*user)->g.rgb? pcc_rescale((*kernel)->r.r, (*user)->g.rgb)*3/4: 0;
-		real_cpy->b.c = (*user)->b.c? pcc_rescale((*kernel)->r.r, (*user)->b.c)*3/4: 0;
-		real_cpy->b.b = (*user)->b.r? pcc_rescale((*kernel)->r.r, (*user)->b.b)*3/4: pcc_rescale((*kernel)->r.r, (*user)->b.b);
-		real_cpy->b.r = (*user)->b.r? pcc_rescale((*kernel)->r.r, (*user)->b.r)*3/4: 0;
-		real_cpy->b.g = (*user)->b.g? pcc_rescale((*kernel)->r.r, (*user)->b.g)*3/4: 0;
-		real_cpy->b.rg = (*user)->b.rg? pcc_rescale((*kernel)->r.r, (*user)->b.rg)*3/4: 0;
-		real_cpy->b.gb = (*user)->b.gb? pcc_rescale((*kernel)->r.r, (*user)->b.gb)*3/4: 0;
-		real_cpy->b.rb = (*user)->b.rb? pcc_rescale((*kernel)->r.r, (*user)->b.rb)*3/4: 0;
-		real_cpy->b.rgb = (*user)->b.rgb? pcc_rescale((*kernel)->r.r, (*user)->b.rgb)*3/4: 0;
-	}else{
-		if(userpcc_en&&(*user)){
-			memcpy(real_cpy, (*user), sizeof(struct mdp_pcc_data_v1_7));
-		}else{
-			if(kernelpcc_en&&(*kernel)){
-				memcpy(real_cpy, (*kernel), sizeof(struct mdp_pcc_data_v1_7));
-			}else{
-				real_cpy->r.r = 32768;
-				real_cpy->g.g = 32768;
-				real_cpy->b.b = 32768;
-			}
-		}
+
+	if (!kernelpcc_en || !*kernel || !userpcc_en || !*user) {
+		if (userpcc_en && *user)
+			memcpy(real_cpy, *user, sizeof(struct mdp_pcc_data_v1_7));
+		else if (kernelpcc_en && *kernel)
+			memcpy(real_cpy, *kernel, sizeof(struct mdp_pcc_data_v1_7));
+		else
+			real_cpy->r.r = real_cpy->g.g = real_cpy->b.b = 32768;
+
+		goto end;
 	}
+
+	k_red = (*kernel)->r.r;
+	k_green = (*kernel)->g.g;
+	k_blue = (*kernel)->b.b;
+
+	real_cpy->r.c = pcc_assess(k_red, (*user)->r.c, &r_cross);
+	real_cpy->r.g = pcc_assess(k_red, (*user)->r.g, &r_cross);
+	real_cpy->r.b = pcc_assess(k_red, (*user)->r.b, &r_cross);
+	real_cpy->r.rg = pcc_assess(k_red, (*user)->r.rg, &r_cross);
+	real_cpy->r.gb = pcc_assess(k_red, (*user)->r.gb, &r_cross);
+	real_cpy->r.rb = pcc_assess(k_red, (*user)->r.rb, &r_cross);
+	real_cpy->r.rgb = pcc_assess(k_red, (*user)->r.rgb, &r_cross);
+
+	real_cpy->g.c = pcc_assess(k_green, (*user)->g.c, &g_cross);
+	real_cpy->g.r = pcc_assess(k_green, (*user)->g.r, &g_cross);
+	real_cpy->g.b = pcc_assess(k_green, (*user)->g.b, &g_cross);
+	real_cpy->g.rg = pcc_assess(k_green, (*user)->g.rg, &g_cross);
+	real_cpy->g.gb = pcc_assess(k_green, (*user)->g.gb, &g_cross);
+	real_cpy->g.rb = pcc_assess(k_green, (*user)->g.rb, &g_cross);
+	real_cpy->g.rgb = pcc_assess(k_green, (*user)->g.rgb, &g_cross);
+
+	real_cpy->b.c = pcc_assess(k_blue, (*user)->b.c, &b_cross);
+	real_cpy->b.r = pcc_assess(k_blue, (*user)->b.r, &b_cross);
+	real_cpy->b.g = pcc_assess(k_blue, (*user)->b.g, &b_cross);
+	real_cpy->b.rg = pcc_assess(k_blue, (*user)->b.rg, &b_cross);
+	real_cpy->b.gb = pcc_assess(k_blue, (*user)->b.gb, &b_cross);
+	real_cpy->b.rb = pcc_assess(k_blue, (*user)->b.rb, &b_cross);
+	real_cpy->b.rgb = pcc_assess(k_blue, (*user)->b.rgb, &b_cross);
+
+	/* 
+	 * Set multiplier to true if one of the assessed values has a valid 
+	 * kernel or user value.
+	 */
+	real_cpy->r.r = pcc_rescale(k_red, (*user)->r.r, r_cross);
+	real_cpy->g.g = pcc_rescale(k_green, (*user)->g.g, g_cross);
+	real_cpy->b.b = pcc_rescale(k_blue, (*user)->b.b, b_cross);
+
+end:
 	memcpy(*real, real_cpy, sizeof(struct mdp_pcc_data_v1_7));
 	kfree(real_cpy);
 }
@@ -3969,37 +3998,41 @@ void pcc_combine(struct mdp_pcc_cfg_data *kernel,
 
 	k_ops = kernel->cfg_payload ? kernel->ops : MDP_PP_OPS_DISABLE;
 	u_ops = user->cfg_payload ? user->ops : MDP_PP_OPS_DISABLE;
+
 	kernelpcc_en = kernel && !(kernel->ops & MDP_PP_OPS_DISABLE);
 	userpcc_en = user && !(user->ops & MDP_PP_OPS_DISABLE);
+	if (kernelpcc_en || userpcc_en) {
+		if (kernelpcc_en && userpcc_en)
+			real->ops = k_ops | u_ops;
+		else if (kernelpcc_en)
+			real->ops = k_ops;
+		else if (userpcc_en)
+			real->ops = u_ops;
+	} else {
+		real->ops = MDP_PP_OPS_DISABLE;
+	}
 
-	// user configuration may change often, but the kernel configuration
-	// will correspond to calibration data which should only change if
-	// there is a mode switch. we only care about the base
-	// coefficients from the user config.
+	/*
+	 * User configuration may change often, but the kernel configuration
+	 * will correspond to calibration data which should only change if
+	 * there is a mode switch. we only care about the base
+	 * coefficients from the user config.
+	 */
 
-	if (!kernelpcc_en || (kernel->r.r == 0 && kernel->g.g == 0 && kernel->b.b == 0)){
+	if (!kernelpcc_en || (!kernel->r.r && !kernel->g.g && !kernel->b.b))
 		kernel->r.r = kernel->g.g = kernel->b.b = 32768;
-	}
-	if (!userpcc_en || (user->r.r == 0 && user->g.g == 0 && user->b.b ==0)){
+	if (!userpcc_en || (!user->r.r && !user->g.g && !user->b.b))
 		user->r.r = user->g.g = user->b.b = 32768;
-	}
 
-	
-	real->r.r = pcc_rescale(kernel->r.r, user->r.r);
-	real->g.g = pcc_rescale(kernel->g.g, user->g.g);
-	real->b.b = pcc_rescale(kernel->b.b, user->b.b);
+	real->r.r = pcc_rescale(kernel->r.r, user->r.r, false);
+	real->g.g = pcc_rescale(kernel->g.g, user->g.g, false);
+	real->b.b = pcc_rescale(kernel->b.b, user->b.b, false);
+
 	v17_kernel_data = kernel->cfg_payload;
 	v17_user_data = user->cfg_payload;
 	v17_real_data = real->cfg_payload;
+	
 	pcc_v1_7_combine(&v17_kernel_data, &v17_user_data, &v17_real_data);
-	if (kernelpcc_en && userpcc_en)
-		real->ops = k_ops | u_ops;
-	else if (kernelpcc_en)
-		real->ops = k_ops;
-	else if (userpcc_en)
-		real->ops = u_ops;
-	else
-		real->ops = MDP_PP_OPS_DISABLE;
 }
 
 int mdss_mdp_kernel_pcc_config(struct msm_fb_data_type *mfd,
@@ -4009,7 +4042,7 @@ int mdss_mdp_kernel_pcc_config(struct msm_fb_data_type *mfd,
 	int ret = 0;
 	u32 disp_num;
 	struct mdss_pp_res_type_v1_7 *res_cache;
-	struct mdp_pcc_data_v1_7 *v17_kernel_data, v17_usr_config, 
+	struct mdp_pcc_data_v1_7 *v17_kernel_data, v17_usr_config,
 			*v17_user_data, *v17_real_data;
 
 	ret = pp_validate_dspp_mfd_block(mfd, config->block);
@@ -4019,6 +4052,7 @@ int mdss_mdp_kernel_pcc_config(struct msm_fb_data_type *mfd,
 				(mfd ? mfd->index : -1), ret);
 		return ret;
 	}
+
 	mutex_lock(&mdss_pp_mutex);
 	disp_num = config->block - MDP_LOGICAL_BLOCK_DISP_0;
 
@@ -4030,32 +4064,36 @@ int mdss_mdp_kernel_pcc_config(struct msm_fb_data_type *mfd,
 
 	res_cache = mdss_pp_res->pp_data_v1_7;
 	mdss_pp_res->kernel_pcc_disp_cfg[disp_num] = *config;
+
 	v17_kernel_data = &res_cache->kernel_pcc_v17_data[disp_num];
 	v17_user_data = &res_cache->user_pcc_v17_data[disp_num];
 	v17_real_data = &res_cache->pcc_v17_data[disp_num];
+
 	mdss_pp_res->kernel_pcc_disp_cfg[disp_num].cfg_payload =
 		(void *) v17_kernel_data;
 	mdss_pp_res->user_pcc_disp_cfg[disp_num].cfg_payload =
 		(void *) v17_user_data;
 	mdss_pp_res->pcc_disp_cfg[disp_num].cfg_payload =
 		(void *) v17_real_data;
+
 	memcpy(&v17_usr_config, config->cfg_payload, sizeof(v17_usr_config));
-	ret = 0;
-	if ((config->ops & MDP_PP_OPS_DISABLE)&&
-		!(config->ops & MDP_PP_OPS_WRITE)) {
+
+	if ((config->ops & MDP_PP_OPS_DISABLE) && !(config->ops & MDP_PP_OPS_WRITE)) {
 		pr_debug("disable pcc\n");
 		pr_debug("op for pcc %d\n", config->ops);
-		ret = 0;
 		goto kernel_pcc_config_exit;
 	}
+
 	memcpy(v17_kernel_data, &v17_usr_config, sizeof(v17_usr_config));
+
 	pcc_combine(&mdss_pp_res->kernel_pcc_disp_cfg[disp_num],
 			&mdss_pp_res->user_pcc_disp_cfg[disp_num],
 			&mdss_pp_res->pcc_disp_cfg[disp_num]);
+
 	mdss_pp_res->pp_disp_flags[disp_num] |= PP_FLAGS_DIRTY_PCC;
 kernel_pcc_config_exit:
 	mutex_unlock(&mdss_pp_mutex);
-	return ret;
+	return 0;
 }
 
 int mdss_mdp_pcc_config(struct msm_fb_data_type *mfd,
@@ -4101,17 +4139,20 @@ int mdss_mdp_pcc_config(struct msm_fb_data_type *mfd,
 				ret = -EINVAL;
 				goto pcc_clk_off;
 			}
+
 			if (mdata->pp_block_off.dspp_pcc_off == U32_MAX) {
 				pr_err("invalid pcc params off %d\n",
 					mdata->pp_block_off.dspp_pcc_off);
 				ret = -EINVAL;
 				goto pcc_clk_off;
 			}
+
 			addr += mdata->pp_block_off.dspp_pcc_off;
 			ret = pp_ops[PCC].pp_get_config(addr, config,
 					DSPP, disp_num);
 			if (ret)
 				pr_err("pcc get config failed %d\n", ret);
+
 			goto pcc_clk_off;
 		}
 
@@ -4127,14 +4168,16 @@ pcc_clk_off:
 			res_cache.block = DSPP;
 			res_cache.mdss_pp_res = mdss_pp_res;
 			res_cache.pipe_res = NULL;
+
 			ret = pp_pcc_cache_params(config, &res_cache);
 			if (ret) {
 				pr_err("pcc config failed version %d ret %d\n",
 					config->version, ret);
 				ret = -EFAULT;
 				goto pcc_config_exit;
-			} else
-				goto pcc_set_dirty;
+			}
+
+			goto pcc_set_dirty;
 		}
 		mdss_pp_res->pcc_disp_cfg[disp_num] = *config;
 pcc_set_dirty:
