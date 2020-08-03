@@ -71,30 +71,11 @@ static struct boost_val input, kick;
 static struct notifier_block fb_notifier;
 static bool fb_state;
 
-static void update_duration(struct boost_val *boost, unsigned short *time)
-{
-	if (*time < 10)
-		*time = (boost == &input) ? 
-			CONFIG_INPUT_DURATION : CONFIG_KICK_DURATION;
-
-	boost->stored_duration_ms = *time;
-	boost->duration = msecs_to_jiffies(*time);
-}
-
-static void update_val(struct boost_val *boost, unsigned int *val)
-{
-	if (*val <= 0 || *val > 100)
-		*val = (boost == &input) ? 
-			CONFIG_INPUT_SCHED_BOOST : CONFIG_KICK_SCHED_BOOST;
-
-	boost->stored_val = *val;
-}
-
 static void set_boost(struct boost_val *boost, bool enable)
 {
 	if (boost->curr_state == enable)
 		return;
-	
+
 	boost->curr_state = enable ?
 		!do_stune_boost("top-app", boost->stored_val, &boost->slot) :
 			reset_stune_boost("top-app", boost->slot);
@@ -107,7 +88,7 @@ static void set_boost(struct boost_val *boost, bool enable)
 		do_prefer_idle("top-app", enable);
 		do_prefer_idle("foreground", enable);
 	} else {
-		/* 
+		/*
 		 * Use idle cpus with high original capacity and bias to big cluster when it
 		 * comes to app launches and transitions in order to speed up the process
 		 * and efficiently consume power.
@@ -123,16 +104,28 @@ static void disable_boost(struct boost_val *boost)
 		mod_delayed_work(boost->boost_wq, &boost->disable, 0);
 }
 
-static void trigger_boost(struct boost_val *boost, unsigned int *sched_boost, 
+static void trigger_boost(struct boost_val *boost, unsigned int *sched_boost,
 		unsigned short *duration_ms)
 {
-	if (*duration_ms != boost->stored_duration_ms)
-		update_duration(boost, duration_ms);
+	if (*duration_ms != boost->stored_duration_ms) {
+		/* Return stored value if invalid */
+		if (*duration_ms < 10) {
+			*duration_ms = boost->stored_duration_ms;
+		} else {
+			boost->stored_duration_ms = *duration_ms;
+			boost->duration = msecs_to_jiffies(boost->stored_duration_ms);
+		}
+	}
 
 	mod_delayed_work(boost->boost_wq, &boost->disable, boost->duration);
-	
+
 	if (*sched_boost != boost->stored_val) {
-		update_val(boost, sched_boost);
+		/* Return stored value if invalid */
+		if (*sched_boost <= 0 || *sched_boost > 100)
+			*sched_boost = boost->stored_val;
+		else
+			boost->stored_val = *sched_boost;
+
 		/* If boost is already active, just update boost value */
 		if (boost->curr_state) {
 			reset_stune_boost("top-app", boost->slot);
@@ -166,12 +159,8 @@ static void kick_remove(struct work_struct *work)
 
 static void trigger_event(struct boost_val *boost, bool state)
 {
-	/* Do not do anything if screen is off */
-	if (!fb_state)
-		return;
-
-	/* Disable boost if state is off */
-	if (!state) {
+	/* Disable boost if state or screen is off */
+	if (!state || !fb_state) {
 		disable_boost(boost);
 		return;
 	}
