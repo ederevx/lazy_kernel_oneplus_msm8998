@@ -38,9 +38,6 @@
 /* Minimum value of RGB recommended */
 #define FF_MIN_SCALE 2560 
 
-#define RET_WORKGROUND 1
-#define RET_WORKGROUND_DELAY 200
-
 #define BACKLIGHT_INDEX 66
 
 static const int bkl_to_pcc[BACKLIGHT_INDEX] =
@@ -66,13 +63,6 @@ static bool pcc_enabled = false;
 static bool mdss_backlight_enable = false;
 u32 copyback = 0;
 u32 dither_copyback = 0;
-
-#ifdef RET_WORKGROUND
-#define BACK_TO_BL_DELAY msecs_to_jiffies(RET_WORKGROUND_DELAY - 62)
-#define BACK_TO_PCC_DELAY msecs_to_jiffies(RET_WORKGROUND_DELAY + 80)
-
-static struct delayed_work back_to_backlight_work, back_to_pcc_work;
-#endif
 
 static int flicker_free_push_dither(int depth)
 {
@@ -149,19 +139,6 @@ u32 mdss_panel_calc_backlight(u32 bl_lvl)
 	return bl_lvl;
 }
 
-#ifdef RET_WORKGROUND
-static void back_to_backlight(struct work_struct *work)
-{
-	pdata = dev_get_platdata(&get_mfd_copy()->pdev->dev);
-	pdata->set_backlight(pdata, backlight);
-}
-
-static void back_to_pcc(struct work_struct *work)
-{
-	mdss_panel_calc_backlight(backlight);
-}
-#endif
-
 void set_flicker_free(bool enabled)
 {
 	if (mdss_backlight_enable == enabled)
@@ -179,18 +156,9 @@ void set_flicker_free(bool enabled)
 	backlight = enabled ? mdss_panel_calc_backlight(get_bkl_lvl()) :
 		get_bkl_lvl();
 
-#ifdef RET_WORKGROUND
-	if (enabled) {
-		mod_delayed_work(system_wq, &back_to_backlight_work, BACK_TO_BL_DELAY);
-	} else {
-		pdata->set_backlight(pdata, backlight);
-		mod_delayed_work(system_wq, &back_to_pcc_work, BACK_TO_PCC_DELAY);
-	}
-#else
 	pdata->set_backlight(pdata, backlight);
 	if (!enabled)
 		mdss_panel_calc_backlight(backlight);
-#endif
 }
 
 void set_elvss_off_threshold(int value)
@@ -221,11 +189,6 @@ static int __init flicker_free_init(void)
 	dither_config.version = mdp_dither_v1_7;
 	dither_config.block = MDP_LOGICAL_BLOCK_DISP_0;
 	dither_payload = kzalloc(sizeof(struct mdp_dither_data_v1_7), GFP_USER);
-
-#ifdef RET_WORKGROUND
-	INIT_DELAYED_WORK(&back_to_backlight_work, back_to_backlight);
-	INIT_DELAYED_WORK(&back_to_pcc_work, back_to_pcc);
-#endif
 
 	return 0;
 }
