@@ -2147,13 +2147,13 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 				mdss_fb_bl_update_notify(mfd,
 					NOTIFY_TYPE_BL_AD_ATTEN_UPDATE);
 			mdss_fb_bl_update_notify(mfd, NOTIFY_TYPE_BL_UPDATE);
-		#ifdef CONFIG_FLICKER_FREE
+#ifdef CONFIG_FLICKER_FREE
 			ff_mfd_copy = mfd;
 			ff_bkl_lvl_cpy = temp;
 			pdata->set_backlight(pdata, mdss_panel_calc_backlight(temp));
-		#else
+#else
 			pdata->set_backlight(pdata, temp);
-		#endif
+#endif
 			mfd->bl_level_scaled = mfd->unset_bl_level;
 			mfd->allow_bl_update = true;
 		}

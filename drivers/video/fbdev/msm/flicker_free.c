@@ -20,6 +20,7 @@
  *
  */
 
+#include <linux/fb.h>
 #include <linux/module.h>
 #include <linux/device.h>
 #include <linux/init.h>
@@ -49,6 +50,10 @@ static const int bkl_to_pcc[BACKLIGHT_INDEX] =
 
 /* Minimum backlight value that does not flicker */
 static int elvss_off_threshold = 66;
+
+/* Framebuffer state notifier */
+static struct notifier_block fb_notifier;
+static bool fb_state;
 
 struct mdss_panel_data *pdata;
 struct mdp_pcc_cfg_data pcc_config;
@@ -123,7 +128,7 @@ static int set_brightness(int backlight)
 
 u32 mdss_panel_calc_backlight(u32 bl_lvl)
 {
-	if (bl_lvl != 0) {
+	if (bl_lvl != 0 && fb_state) {
 		if (mdss_backlight_enable && bl_lvl < elvss_off_threshold) {
 			printk("flicker free mode on\n");
 			printk("elvss_off = %d\n", elvss_off_threshold);
@@ -176,8 +181,23 @@ bool if_flicker_free_enabled(void)
 	return mdss_backlight_enable;
 }
 
+static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
+			  void *data)
+{
+	int *blank = ((struct fb_event *) data)->data;
+
+	if (action != FB_EARLY_EVENT_BLANK)
+		return NOTIFY_OK;
+
+	fb_state = *blank == FB_BLANK_UNBLANK;
+
+	return NOTIFY_OK;
+}
+
 static int __init flicker_free_init(void)
 {
+	int ret;
+
 	memset(&pcc_config, 0, sizeof(struct mdp_pcc_cfg_data));
 
 	pcc_config.version = mdp_pcc_v1_7;
@@ -190,13 +210,18 @@ static int __init flicker_free_init(void)
 	dither_config.block = MDP_LOGICAL_BLOCK_DISP_0;
 	dither_payload = kzalloc(sizeof(struct mdp_dither_data_v1_7), GFP_USER);
 
-	return 0;
+	fb_notifier.notifier_call = fb_notifier_cb;
+	fb_notifier.priority = INT_MAX;
+	ret = fb_register_client(&fb_notifier);
+
+	return ret;
 }
 
 static void __exit flicker_free_exit(void)
 {
 	kfree(payload);
 	kfree(dither_payload);
+	fb_unregister_client(&fb_notifier);
 }
 
 late_initcall(flicker_free_init);
