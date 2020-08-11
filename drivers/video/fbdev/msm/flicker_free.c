@@ -130,8 +130,6 @@ u32 mdss_panel_calc_backlight(u32 bl_lvl)
 {
 	if (bl_lvl != 0 && fb_state) {
 		if (mdss_backlight_enable && bl_lvl < elvss_off_threshold) {
-			printk("flicker free mode on\n");
-			printk("elvss_off = %d\n", elvss_off_threshold);
 			pcc_enabled = true;
 			if (!set_brightness(bl_lvl))
 				return elvss_off_threshold;
