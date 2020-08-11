@@ -53,7 +53,6 @@ static int elvss_off_threshold = 66;
 
 /* Framebuffer state notifier */
 static struct notifier_block fb_notifier;
-static bool fb_state;
 
 struct mdss_panel_data *pdata;
 struct mdp_pcc_cfg_data pcc_config;
@@ -66,6 +65,7 @@ static const u32 pcc_depth[9] = {128, 256, 512, 1024, 2048,
 static u32 depth = 8;
 static bool pcc_enabled = false;
 static bool mdss_backlight_enable = false;
+static bool disable_flicker_free;
 u32 copyback = 0;
 u32 dither_copyback = 0;
 
@@ -128,7 +128,7 @@ static int set_brightness(int backlight)
 
 u32 mdss_panel_calc_backlight(u32 bl_lvl)
 {
-	if (bl_lvl != 0 && fb_state) {
+	if (bl_lvl != 0 && !disable_flicker_free) {
 		if (mdss_backlight_enable && bl_lvl < elvss_off_threshold) {
 			pcc_enabled = true;
 			if (!set_brightness(bl_lvl))
@@ -187,7 +187,7 @@ static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
 	if (action != FB_EARLY_EVENT_BLANK)
 		return NOTIFY_OK;
 
-	fb_state = *blank == FB_BLANK_UNBLANK;
+	disable_flicker_free = *blank != FB_BLANK_UNBLANK;
 
 	return NOTIFY_OK;
 }
