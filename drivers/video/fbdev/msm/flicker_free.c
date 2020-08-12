@@ -145,6 +145,8 @@ u32 mdss_panel_calc_backlight(u32 bl_lvl)
 
 void set_flicker_free(bool enabled)
 {
+	u32 bkl_lvl;
+
 	if (mdss_backlight_enable == enabled)
 		return;
 
@@ -157,12 +159,9 @@ void set_flicker_free(bool enabled)
 	if (!pdata || !pdata->set_backlight)
 		return;
 
-	backlight = enabled ? mdss_panel_calc_backlight(get_bkl_lvl()) :
-		get_bkl_lvl();
-
-	pdata->set_backlight(pdata, backlight);
-	if (!enabled)
-		mdss_panel_calc_backlight(backlight);
+	bkl_lvl = get_bkl_lvl();
+	backlight = mdss_panel_calc_backlight(bkl_lvl);
+	pdata->set_backlight(pdata, !enabled ? bkl_lvl : backlight);
 }
 
 void set_elvss_off_threshold(int value)
