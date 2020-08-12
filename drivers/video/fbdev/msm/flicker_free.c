@@ -71,7 +71,7 @@ u32 dither_copyback = 0;
 
 static int flicker_free_push_dither(int depth)
 {
-	dither_config.flags = mdss_backlight_enable ?
+	dither_config.flags = (mdss_backlight_enable && !disable_flicker_free) ?
 		MDP_PP_OPS_WRITE | MDP_PP_OPS_ENABLE :
 			MDP_PP_OPS_WRITE | MDP_PP_OPS_DISABLE;
 
@@ -128,8 +128,9 @@ static int set_brightness(int backlight)
 
 u32 mdss_panel_calc_backlight(u32 bl_lvl)
 {
-	if (bl_lvl != 0 && !disable_flicker_free) {
-		if (mdss_backlight_enable && bl_lvl < elvss_off_threshold) {
+	if (bl_lvl != 0) {
+		if (mdss_backlight_enable && bl_lvl < elvss_off_threshold && 
+			!disable_flicker_free) {
 			pcc_enabled = true;
 			if (!set_brightness(bl_lvl))
 				return elvss_off_threshold;
