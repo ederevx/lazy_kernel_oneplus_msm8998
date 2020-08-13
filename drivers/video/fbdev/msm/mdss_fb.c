@@ -2060,6 +2060,9 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 	u32 temp = bkl_lvl;
 	bool ad_bl_notify_needed = false;
 	bool bl_notify_needed = false;
+#ifdef CONFIG_FLICKER_FREE
+	u32 bkl_lvl_calc;
+#endif
 
 	if ((((mdss_fb_is_power_off(mfd) && mfd->dcm_state != DCM_ENTER)
 		|| !mfd->allow_bl_update) && !IS_CALIB_MODE_BL(mfd)) ||
@@ -2096,8 +2099,9 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 #ifdef CONFIG_FLICKER_FREE
 			ff_mfd_copy = mfd;
 			ff_bkl_lvl_cpy = temp;
-			pr_debug("backlight sent to panel :%d\n", mdss_panel_calc_backlight(temp));
-			pdata->set_backlight(pdata, mdss_panel_calc_backlight(temp));
+			bkl_lvl_calc = mdss_panel_calc_backlight(temp);
+			pr_debug("backlight sent to panel :%d\n", bkl_lvl_calc);
+			pdata->set_backlight(pdata, bkl_lvl_calc);
 #else
 			pr_debug("backlight sent to panel :%d\n", temp);
 			pdata->set_backlight(pdata, temp);
