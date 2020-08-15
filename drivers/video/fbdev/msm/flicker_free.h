@@ -23,19 +23,7 @@
 #ifndef _FLICKER_FREE_H
 #define _FLICKER_FREE_H
 
-/* with this function you can set the flicker free into enabled or disabled */
-void set_flicker_free(bool enabled);
-
-/* you can use this function to remap the phisical backlight level */
+/* you can use this function to remap the physical backlight level */
 u32 mdss_panel_calc_backlight(u32 bl_lvl);
-
-/* set the minimum backlight value that does not flicker on your device */
-void set_elvss_off_threshold(int value);
-
-/* get the current elvss value */
-int get_elvss_off_threshold(void);
-
-/* get the current flicker free status (enabled or disabled) */
-bool if_flicker_free_enabled(void);
 
 #endif  /* _FLICKER_FREE_H */
