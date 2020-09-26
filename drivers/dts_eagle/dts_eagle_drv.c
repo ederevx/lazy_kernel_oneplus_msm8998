@@ -64,7 +64,7 @@ enum {                  /* cache block description */
 
 /* pr_debug */
 #define dts_eagle_drv_dbg_msg(fmt, ...)  \
-	(no_printk(KERN_INFO "DTS_EAGLE_DRIVER: " fmt "\n", ##__VA_ARGS__))
+	no_printk(KERN_INFO "DTS_EAGLE_DRIVER: " fmt "\n", ##__VA_ARGS__)
 
 /* dts eagle driver */
 static dev_t            dts_eagle_dev;
