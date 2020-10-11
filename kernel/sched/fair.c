@@ -7398,7 +7398,7 @@ static inline int find_best_target(struct task_struct *p, int *backup_cpu,
 	if (target_cpu != -1 && !idle_cpu(target_cpu) &&
 			best_idle_cpu != -1) {
 		curr_tsk = READ_ONCE(cpu_rq(target_cpu)->curr);
-		if (curr_tsk && schedtune_task_boost_rcu_locked(curr_tsk)) {
+		if (curr_tsk && schedtune_boost_bias_rcu_locked(curr_tsk)) {
 			target_cpu = best_idle_cpu;
 		}
 	}
@@ -7457,7 +7457,7 @@ static int wake_cap(struct task_struct *p, int cpu, int prev_cpu)
 static inline bool
 task_is_boosted(struct task_struct *p) {
 #ifdef CONFIG_CGROUP_SCHEDTUNE
-	return schedtune_task_boost(p) > 0;
+	return schedtune_boost_bias(p) > 0;
 #else
 	return get_sysctl_sched_cfs_boost() > 0;
 #endif
