@@ -11,7 +11,6 @@
  *
  */
 
-#define CREATE_TRACE_POINTS
 #define MAX_SSR_STRING_LEN 10
 #include "msm_vidc_debug.h"
 #include "vidc_hfi_api.h"

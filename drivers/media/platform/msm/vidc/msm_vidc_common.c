@@ -11,6 +11,8 @@
  *
  */
 
+#define CREATE_TRACE_POINTS
+
 #include <linux/jiffies.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
