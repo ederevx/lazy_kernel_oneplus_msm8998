@@ -691,6 +691,15 @@ static int boost_write_wrapper(struct cgroup_subsys_state *css,
 	return boost_write(css, cft, boost);
 }
 
+static int boost_bias_write_wrapper(struct cgroup_subsys_state *css,
+			       struct cftype *cft, u64 boost_bias)
+{
+	if (task_is_booster(current))
+		return 0;
+
+	return boost_bias_write(css, cft, boost_bias);
+}
+
 static int prefer_idle_write_wrapper(struct cgroup_subsys_state *css,
 				     struct cftype *cft, u64 prefer_idle)
 {
@@ -710,7 +719,7 @@ static struct cftype files[] = {
 	{
 		.name = "boost_bias",
 		.read_u64 = boost_bias_read,
-		.write_u64 = boost_bias_write,
+		.write_u64 = boost_bias_write_wrapper,
 	},
 	{
 		.name = "prefer_idle",
@@ -743,16 +752,18 @@ schedtune_boostgroup_init(struct schedtune *st)
 struct st_data {
 	char *name;
 	int boost;
+	bool boost_bias;
 	bool prefer_idle;
 };
+
 static void write_default_values(struct cgroup_subsys_state *css)
 {
 	static struct st_data st_targets[] = {
-		{ "audio-app",	0, 0 },
-		{ "background",	0, 0 },
-		{ "foreground",	0, 0 },
-		{ "rt",		0, 0 },
-		{ "top-app",	5, 1 },
+		{ "audio-app",	0, 0, 0 },
+		{ "background",	0, 0, 0 },
+		{ "foreground",	0, 0, 0 },
+		{ "rt",		0, 0, 0 },
+		{ "top-app",	0, 1, 0 },
 	};
 	int i;
 
@@ -760,10 +771,11 @@ static void write_default_values(struct cgroup_subsys_state *css)
 		struct st_data tgt = st_targets[i];
 
 		if (!strcmp(css->cgroup->kn->name, tgt.name)) {
-			pr_info("stune_assist: setting values for %s: boost=%d prefer_idle=%d\n",
-				tgt.name, tgt.boost, tgt.prefer_idle);
+			pr_info("stune_assist: setting values for %s: boost=%d boost_bias=%d prefer_idle=%d\n", 
+				tgt.name, tgt.boost, tgt.boost_bias, tgt.prefer_idle);
 
 			boost_write(css, NULL, tgt.boost);
+			boost_bias_write(css, NULL, tgt.boost_bias);
 			prefer_idle_write(css, NULL, tgt.prefer_idle);
 		}
 	}
