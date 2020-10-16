@@ -559,7 +559,7 @@ int schedtune_boost_bias(struct task_struct *p)
 	/* Get boost_bias value */
 	rcu_read_lock();
 	st = task_schedtune(p);
-	boost_bias = st->boost_bias;
+	boost_bias = st->boost > 0 ? 1 : st->boost_bias;
 	rcu_read_unlock();
 
 	return boost_bias;
