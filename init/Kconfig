@@ -1372,6 +1372,33 @@ config SCHED_TUNE
 
 	  If unsure, say N.
 
+config DYNAMIC_STUNE
+	bool "Dynamic schedtune configuration"
+	depends on SCHED_TUNE
+	help
+	  This option enables a simple driver that enables/disables schedtune
+	  parameters during runtime.
+
+	  If unsure, say N.
+
+if DYNAMIC_STUNE
+
+config INPUT_STUNE_DURATION
+	int "Dynamic schedtune input duration in milliseconds"
+	range 10 10000
+	help
+	  Determines how long after input parameters are turned on after an input
+	  event.
+
+config KICK_STUNE_DURATION
+	int "Dynamic schedtune input duration in milliseconds"
+	range 10 10000
+	help
+	  Determines how long kick parameters are turned on after zygote and top-app
+	  forks.
+
+endif
+
 config STUNE_ASSIST
 	bool "SchedTune configuration helper"
 	depends on SCHED_TUNE

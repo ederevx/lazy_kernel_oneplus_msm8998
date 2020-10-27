@@ -87,6 +87,10 @@
 #include <asm/cacheflush.h>
 #include <asm/tlbflush.h>
 
+#ifdef CONFIG_DYNAMIC_STUNE
+#include <linux/dynamic_stune.h>
+#endif
+
 #include <trace/events/sched.h>
 
 #define CREATE_TRACE_POINTS
@@ -1800,6 +1804,11 @@ long _do_fork(unsigned long clone_flags,
 	struct task_struct *p;
 	int trace = 0;
 	long nr;
+
+#ifdef CONFIG_DYNAMIC_STUNE
+	if (task_is_zygote(current))
+		dynstune_kick();
+#endif /* CONFIG_DYNAMIC_STUNE */
 
 	/*
 	 * Determine whether and which event to report to ptracer.  When

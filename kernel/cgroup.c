@@ -60,6 +60,11 @@
 #include <linux/cpuset.h>
 #include <linux/atomic.h>
 
+#ifdef CONFIG_DYNAMIC_STUNE
+#include <linux/binfmts.h>
+#include <linux/dynamic_stune.h>
+#endif /* CONFIG_DYNAMIC_STUNE */
+
 /*
  * pidlists linger the following amount before being destroyed.  The goal
  * is avoiding frequent destruction in the middle of consecutive read calls
@@ -2755,6 +2760,12 @@ static ssize_t __cgroup_procs_write(struct kernfs_open_file *of, char *buf,
 	ret = cgroup_procs_write_permission(tsk, cgrp, of);
 	if (!ret)
 		ret = cgroup_attach_task(cgrp, tsk, threadgroup);
+
+#ifdef CONFIG_DYNAMIC_STUNE
+	if (!ret && !threadgroup && !strcmp(of->kn->parent->name, "top-app") &&
+	    task_is_zygote(tsk->parent))
+		dynstune_kick();
+#endif /* CONFIG_DYNAMIC_STUNE */
 
 	put_task_struct(tsk);
 	goto out_unlock_threadgroup;

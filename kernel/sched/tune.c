@@ -928,6 +928,49 @@ schedtune_init_cgroups(void)
 	schedtune_initialized = true;
 }
 
+#ifdef CONFIG_DYNAMIC_STUNE
+static struct schedtune *stune_get_by_name(char *st_name)
+{
+	int idx;
+
+	for (idx = 1; idx < BOOSTGROUPS_COUNT; ++idx) {
+		char name_buf[NAME_MAX + 1];
+		struct schedtune *st = allocated_group[idx];
+
+		if (!st) {
+			pr_warn("schedtune: could not find %s\n", st_name);
+			break;
+		}
+
+		cgroup_name(st->css.cgroup, name_buf, sizeof(name_buf));
+		if (strncmp(name_buf, st_name, strlen(st_name)) == 0)
+			return st;
+	}
+
+	return NULL;
+}
+
+int do_prefer_idle(char *st_name, u64 prefer_idle)
+{
+	struct schedtune *st = stune_get_by_name(st_name);
+
+	if (!st)
+		return -EINVAL;
+
+	return prefer_idle_write(&st->css, NULL, prefer_idle);
+}
+
+int do_crucial(char *st_name, u64 crucial)
+{
+	struct schedtune *st = stune_get_by_name(st_name);
+
+	if (!st)
+		return -EINVAL;
+
+	return crucial_write(&st->css, NULL, crucial);
+}
+#endif /* CONFIG_DYNAMIC_STUNE */
+
 #else /* CONFIG_CGROUP_SCHEDTUNE */
 
 int
