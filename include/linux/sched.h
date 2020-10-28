@@ -3584,9 +3584,4 @@ void cpufreq_add_update_util_hook(int cpu, struct update_util_data *data,
 void cpufreq_remove_update_util_hook(int cpu);
 #endif /* CONFIG_CPU_FREQ */
 
-#ifdef CONFIG_DYNAMIC_STUNE
-int do_prefer_idle(char *st_name, u64 prefer_idle);
-int do_crucial(char *st_name, u64 crucial);
-#endif /* CONFIG_DYNAMIC_STUNE */
-
 #endif

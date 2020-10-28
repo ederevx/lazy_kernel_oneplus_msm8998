@@ -1374,7 +1374,7 @@ config SCHED_TUNE
 
 config DYNAMIC_STUNE
 	bool "Dynamic schedtune configuration"
-	depends on SCHED_TUNE
+	depends on SCHED_TUNE && CGROUP_SCHEDTUNE
 	help
 	  This option enables a simple driver that enables/disables schedtune
 	  parameters during runtime.

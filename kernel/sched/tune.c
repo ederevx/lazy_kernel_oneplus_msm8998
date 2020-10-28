@@ -744,6 +744,12 @@ static int prefer_idle_write_wrapper(struct cgroup_subsys_state *css,
 	if (task_is_booster(current))
 		return 0;
 
+#ifdef CONFIG_DYNAMIC_STUNE
+	if ((!strcmp(css->cgroup->kn->name, "top-app")) || 
+		(!strcmp(css->cgroup->kn->name, "foreground")))
+		return 0;
+#endif /* CONFIG_DYNAMIC_STUNE */
+
 	return prefer_idle_write(css, cft, prefer_idle);
 }
 
@@ -752,6 +758,11 @@ static int crucial_write_wrapper(struct cgroup_subsys_state *css,
 {
 	if (task_is_booster(current))
 		return 0;
+
+#ifdef CONFIG_DYNAMIC_STUNE
+	if (!strcmp(css->cgroup->kn->name, "top-app"))
+		return 0;
+#endif /* CONFIG_DYNAMIC_STUNE */
 
 	return crucial_write(css, cft, crucial);
 }

@@ -7,8 +7,9 @@
 #include <linux/input.h>
 #include <linux/slab.h>
 #include <linux/time.h>
-#include <linux/sched.h>
 #include <linux/dynamic_stune.h>
+
+#include "tune.h"
 
 /*
  * Configurable variables

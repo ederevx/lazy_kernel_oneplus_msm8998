@@ -27,6 +27,11 @@ void schedtune_exit_task(struct task_struct *tsk);
 void schedtune_enqueue_task(struct task_struct *p, int cpu);
 void schedtune_dequeue_task(struct task_struct *p, int cpu);
 
+#ifdef CONFIG_DYNAMIC_STUNE
+int do_prefer_idle(char *st_name, u64 prefer_idle);
+int do_crucial(char *st_name, u64 crucial);
+#endif /* CONFIG_DYNAMIC_STUNE */
+
 #else /* CONFIG_CGROUP_SCHEDTUNE */
 
 #define schedtune_cpu_boost(cpu)  get_sysctl_sched_cfs_boost()
