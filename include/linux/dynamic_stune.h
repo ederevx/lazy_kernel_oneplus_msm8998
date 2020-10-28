@@ -6,10 +6,6 @@
 #ifndef _DYNAMIC_STUNE_H_
 #define _DYNAMIC_STUNE_H_
 
-#ifdef CONFIG_DYNAMIC_STUNE
 void dynstune_kick(void);
-#else
-static inline void dynstune_kick(void) {}
-#endif /* CONFIG_DYNAMIC_STUNE */
 
 #endif /* _DYNAMIC_STUNE_H_ */
