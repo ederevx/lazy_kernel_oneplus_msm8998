@@ -4163,8 +4163,10 @@ entity_tick(struct cfs_rq *cfs_rq, struct sched_entity *curr, int queued)
 	}
 	/*
 	 * don't let the period tick interfere with the hrtick preemption
+	 * unless timekeeping_suspended is true in which period tick should
+	 * take over.
 	 */
-	if (!sched_feat(DOUBLE_TICK) &&
+	if (!sched_feat(DOUBLE_TICK) && !timekeeping_suspended &&
 			hrtimer_active(&rq_of(cfs_rq)->hrtick_timer))
 		return;
 #endif
