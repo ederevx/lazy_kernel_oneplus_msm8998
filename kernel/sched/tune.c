@@ -742,6 +742,10 @@ dynamic_boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	    s64 dynamic_boost)
 {
 	struct schedtune *st = css_st(css);
+	
+	if (dynamic_boost < -100 || dynamic_boost > 100)
+		return -EINVAL;
+
 	st->dynamic_boost = dynamic_boost;
 
 	/* Update boost */
