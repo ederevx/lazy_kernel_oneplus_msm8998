@@ -28,6 +28,7 @@ void schedtune_enqueue_task(struct task_struct *p, int cpu);
 void schedtune_dequeue_task(struct task_struct *p, int cpu);
 
 #ifdef CONFIG_DYNAMIC_STUNE
+int do_boost(char *st_name, bool enable);
 int do_prefer_idle(char *st_name, u64 prefer_idle);
 int do_crucial(char *st_name, u64 crucial);
 #endif /* CONFIG_DYNAMIC_STUNE */

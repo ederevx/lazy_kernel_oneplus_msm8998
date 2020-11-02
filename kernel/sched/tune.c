@@ -121,6 +121,11 @@ struct schedtune {
 	/* Boost value for tasks on that SchedTune CGroup */
 	int boost;
 
+#ifdef CONFIG_DYNAMIC_STUNE
+	/* Dynamic boost value for tasks on pre-configured SchedTune CGroups */
+	int dynamic_boost;
+#endif /* CONFIG_DYNAMIC_STUNE */
+
 	/* Bias high performance cpus for the tasks on that SchedTune CGroup */
 	int boost_bias;
 
@@ -165,6 +170,9 @@ static inline struct schedtune *parent_st(struct schedtune *st)
 static struct schedtune
 root_schedtune = {
 	.boost	= 0,
+#ifdef CONFIG_DYNAMIC_STUNE
+	.dynamic_boost = 0,
+#endif /* CONFIG_DYNAMIC_STUNE */
 	.boost_bias	= 0,
 	.perf_boost_idx = 0,
 	.perf_constrain_idx = 0,
@@ -720,14 +728,58 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	return 0;
 }
 
+#ifdef CONFIG_DYNAMIC_STUNE
+static s64
+dynamic_boost_read(struct cgroup_subsys_state *css, struct cftype *cft)
+{
+	struct schedtune *st = css_st(css);
+
+	return st->dynamic_boost;
+}
+
+static int
+dynamic_boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
+	    s64 dynamic_boost)
+{
+	struct schedtune *st = css_st(css);
+	st->dynamic_boost = dynamic_boost;
+
+	/* Update boost */
+	if (st->boost != 0 && st->boost != dynamic_boost)
+		boost_write(css, cft, dynamic_boost);
+
+	return 0;
+}
+#endif /* CONFIG_DYNAMIC_STUNE */
+
 static int boost_write_wrapper(struct cgroup_subsys_state *css,
 			       struct cftype *cft, s64 boost)
 {
 	if (task_is_booster(current))
 		return 0;
 
+#ifdef CONFIG_DYNAMIC_STUNE
+	if (!strcmp(css->cgroup->kn->name, "top-app"))
+		return 0;
+#endif /* CONFIG_DYNAMIC_STUNE */
+
 	return boost_write(css, cft, boost);
 }
+
+#ifdef CONFIG_DYNAMIC_STUNE
+static int dynamic_boost_write_wrapper(struct cgroup_subsys_state *css,
+			       struct cftype *cft, s64 dynamic_boost)
+{
+	if (task_is_booster(current))
+		return 0;
+
+	/* Only allow writing to top-app */
+	if (strcmp(css->cgroup->kn->name, "top-app"))
+		return 0;
+
+	return dynamic_boost_write(css, cft, dynamic_boost);
+}
+#endif /* CONFIG_DYNAMIC_STUNE */
 
 static int boost_bias_write_wrapper(struct cgroup_subsys_state *css,
 			       struct cftype *cft, u64 boost_bias)
@@ -773,6 +825,13 @@ static struct cftype files[] = {
 		.read_s64 = boost_read,
 		.write_s64 = boost_write_wrapper,
 	},
+#ifdef CONFIG_DYNAMIC_STUNE
+	{
+		.name = "dynamic_boost",
+		.read_s64 = dynamic_boost_read,
+		.write_s64 = dynamic_boost_write_wrapper,
+	},
+#endif /* CONFIG_DYNAMIC_STUNE */
 	{
 		.name = "boost_bias",
 		.read_u64 = boost_bias_read,
@@ -837,7 +896,14 @@ static void write_default_values(struct cgroup_subsys_state *css)
 			pr_info("stune_assist: setting values for %s: boost=%d boost_bias=%d prefer_idle=%d crucial=%d\n", 
 				tgt.name, tgt.boost, tgt.boost_bias, tgt.prefer_idle, tgt.crucial);
 
+#ifdef CONFIG_DYNAMIC_STUNE
+			if (!strcmp(tgt.name, "top-app"))
+				dynamic_boost_write(css, NULL, tgt.boost);
+			else
+				boost_write(css, NULL, tgt.boost);
+#else 
 			boost_write(css, NULL, tgt.boost);
+#endif/* CONFIG_DYNAMIC_STUNE */
 			boost_bias_write(css, NULL, tgt.boost_bias);
 			prefer_idle_write(css, NULL, tgt.prefer_idle);
 			crucial_write(css, NULL, tgt.crucial);
@@ -959,6 +1025,22 @@ static struct schedtune *stune_get_by_name(char *st_name)
 	}
 
 	return NULL;
+}
+
+int do_boost(char *st_name, bool enable)
+{
+	struct schedtune *st = stune_get_by_name(st_name);
+	s64 boost;
+
+	if (!st)
+		return -EINVAL;
+	
+	boost = enable ? st->dynamic_boost : 0;
+
+	if (st->boost == boost)
+		return 0;
+
+	return boost_write(&st->css, NULL, boost);
 }
 
 int do_prefer_idle(char *st_name, u64 prefer_idle)

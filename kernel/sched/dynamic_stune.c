@@ -46,6 +46,7 @@ static inline void set_stune(struct stune_val *stune, bool enable)
 		 * Enable stune and prefer_idle with bias function in order to bias 
 		 * migrating top-app (also for foreground) tasks to idle big cluster cores.
 		 */
+		do_boost("top-app", enable);
 		do_prefer_idle("top-app", enable);
 		do_prefer_idle("foreground", enable);
 	} else {
