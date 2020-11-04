@@ -180,7 +180,7 @@ struct ds2_dap_params_states_s {
 };
 
 static struct ds2_dap_params_states_s ds2_dap_params_states = {false, true,
-				DAP_HARD_BYPASS, false, DEVICE_NONE, false};
+				DAP_HARD_BYPASS, false, DEVICE_NONE, true};
 
 static int all_supported_devices = EARPIECE|SPEAKER|WIRED_HEADSET|
 			WIRED_HEADPHONE|BLUETOOTH_SCO|AUX_DIGITAL|
@@ -355,13 +355,13 @@ int qti_set_custom_stereo_on(int port_id, int copp_idx,
 		 __func__, port_id, copp_idx, is_custom_stereo_on);
 	if (is_custom_stereo_on) {
 		op_FL_ip_FL_weight =
-			Q14_GAIN_ZERO_POINT_FIVE;
+			Q14_GAIN_UNITY;
 		op_FL_ip_FR_weight =
 			Q14_GAIN_ZERO_POINT_FIVE;
 		op_FR_ip_FL_weight =
 			Q14_GAIN_ZERO_POINT_FIVE;
 		op_FR_ip_FR_weight =
-			Q14_GAIN_ZERO_POINT_FIVE;
+			Q14_GAIN_UNITY;
 	} else {
 		op_FL_ip_FL_weight = Q14_GAIN_UNITY;
 		op_FL_ip_FR_weight = 0;

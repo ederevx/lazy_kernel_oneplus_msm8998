@@ -80,7 +80,7 @@ static int msm_ec_ref_bit_format = SNDRV_PCM_FORMAT_S16_LE;
 static int msm_ec_ref_sampling_rate = 5;
 static uint32_t voc_session_id = ALL_SESSION_VSID;
 static int msm_route_ext_ec_ref;
-static bool is_custom_stereo_on;
+static bool is_custom_stereo_on = 1;
 static bool is_ds2_on = 1;
 static bool swap_ch;
 static int msm_native_mode = 3;
@@ -282,10 +282,10 @@ static void msm_pcm_routng_cfg_matrix_map_pp(struct route_payload payload,
 				payload.port_id[itr],
 				payload.copp_idx[itr],
 				payload.session_id,
+				Q14_GAIN_UNITY,
 				Q14_GAIN_ZERO_POINT_FIVE,
 				Q14_GAIN_ZERO_POINT_FIVE,
-				Q14_GAIN_ZERO_POINT_FIVE,
-				Q14_GAIN_ZERO_POINT_FIVE);
+				Q14_GAIN_UNITY);
 			if (rc < 0)
 				pr_err("%s: err setting custom stereo\n",
 					__func__);
@@ -16179,13 +16179,13 @@ static int msm_routing_put_stereo_to_custom_stereo_control(
 				fe_dai_map[i][SESSION_TYPE_RX].strm_id;
 			if (is_custom_stereo_on) {
 				op_FL_ip_FL_weight =
-					Q14_GAIN_ZERO_POINT_FIVE;
+					Q14_GAIN_UNITY;
 				op_FL_ip_FR_weight =
 					Q14_GAIN_ZERO_POINT_FIVE;
 				op_FR_ip_FL_weight =
 					Q14_GAIN_ZERO_POINT_FIVE;
 				op_FR_ip_FR_weight =
-					Q14_GAIN_ZERO_POINT_FIVE;
+					Q14_GAIN_UNITY;
 			} else {
 				op_FL_ip_FL_weight = Q14_GAIN_UNITY;
 				op_FL_ip_FR_weight = 0;
