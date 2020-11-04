@@ -1383,19 +1383,28 @@ config DYNAMIC_STUNE
 
 if DYNAMIC_STUNE
 
-config INPUT_STUNE_DURATION
-	int "Dynamic schedtune input duration in milliseconds"
+config STUNE_BOOST_DURATION
+	int "Dynamic schedtune framebuffer boost duration in milliseconds"
 	range 10 10000
+	default 1000
 	help
-	  Determines how long after input parameters are turned on after an input
-	  event.
+	  Determines how long after boost parameters are turned on after a framebuffer
+	  update.
 
-config KICK_STUNE_DURATION
-	int "Dynamic schedtune input duration in milliseconds"
+config STUNE_CRUCIAL_DURATION
+	int "Dynamic schedtune crucial duration in milliseconds"
 	range 10 10000
+	default 1500
 	help
-	  Determines how long kick parameters are turned on after zygote and top-app
+	  Determines how long crucial parameters are turned on after zygote and top-app
 	  forks.
+
+config INPUT_INTERVAL_DURATION
+	int "Dynamic schedtune input interval duration in milliseconds"
+	range 10 10000
+	default 5000
+	help
+	  Determines how long can stune boost be triggered after a touch input.
 
 endif
 

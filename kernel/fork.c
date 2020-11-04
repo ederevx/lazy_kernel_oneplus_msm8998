@@ -1806,8 +1806,9 @@ long _do_fork(unsigned long clone_flags,
 	long nr;
 
 #ifdef CONFIG_DYNAMIC_STUNE
-	if (task_is_zygote(current))
-		dynstune_kick();
+	if (task_is_zygote(current) && dynstune_allowed(&crucial_lock) &&
+		(jiffies > last_crucial_time + CRUCIAL_CLEARANCE))
+		dynstune_crucial();
 #endif /* CONFIG_DYNAMIC_STUNE */
 
 	/*
