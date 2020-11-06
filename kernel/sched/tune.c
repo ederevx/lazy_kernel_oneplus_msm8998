@@ -743,7 +743,7 @@ dynamic_boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 {
 	struct schedtune *st = css_st(css);
 	
-	if (dynamic_boost < -100 || dynamic_boost > 100)
+	if (dynamic_boost < 0 || dynamic_boost > 100)
 		return -EINVAL;
 
 	st->dynamic_boost = dynamic_boost;
@@ -1034,17 +1034,11 @@ static struct schedtune *stune_get_by_name(char *st_name)
 int do_boost(char *st_name, bool enable)
 {
 	struct schedtune *st = stune_get_by_name(st_name);
-	s64 boost;
 
 	if (!st)
 		return -EINVAL;
-	
-	boost = enable ? st->dynamic_boost : 0;
 
-	if (st->boost == boost)
-		return 0;
-
-	return boost_write(&st->css, NULL, boost);
+	return boost_write(&st->css, NULL, enable ? st->dynamic_boost : 0);
 }
 
 int do_prefer_idle(char *st_name, u64 prefer_idle)
