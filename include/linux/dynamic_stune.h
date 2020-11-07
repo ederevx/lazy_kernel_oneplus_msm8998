@@ -13,21 +13,15 @@
  */
 #define BOOST_DURATION msecs_to_jiffies(CONFIG_STUNE_BOOST_DURATION)
 #define CRUCIAL_DURATION msecs_to_jiffies(CONFIG_STUNE_CRUCIAL_DURATION)
-#define INPUT_INTERVAL msecs_to_jiffies(CONFIG_INPUT_INTERVAL_DURATION)
+#define INPUT_DURATION msecs_to_jiffies(CONFIG_INPUT_INTERVAL_DURATION)
 
 /*
- * Time prohibition for triggering boosts
+ * Time prohibitions for triggering boosts
  */
-#define BOOST_CLEARANCE (BOOST_DURATION >> 1)
-#define CRUCIAL_CLEARANCE (CRUCIAL_DURATION >> 1)
-
-/*
- * Check mutex lock before allowing dynstune execution
- */
-#define dynstune_allowed(_lock) !mutex_is_locked(_lock)
-
 extern unsigned long last_input_time, last_boost_time, last_crucial_time;
-extern struct mutex boost_lock, crucial_lock;
+#define INPUT_INTERVAL (last_input_time + INPUT_DURATION)
+#define BOOST_CLEARANCE (last_boost_time + (BOOST_DURATION >> 1))
+#define CRUCIAL_CLEARANCE (last_crucial_time + (CRUCIAL_DURATION >> 1))
 
 void dynstune_boost(void);
 void dynstune_crucial(void);
