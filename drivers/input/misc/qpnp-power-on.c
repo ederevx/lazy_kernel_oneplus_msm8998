@@ -810,7 +810,8 @@ qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 			cancel_delayed_work(&pon->press_work);
 		} else {
 			pr_info("Power-Key DOWN\n");
-			schedule_delayed_work(&pon->press_work, msecs_to_jiffies(3000));
+			queue_delayed_work(system_highpri_wq, &pon->press_work,
+				msecs_to_jiffies(3000));
 		}
 		break;
 	case PON_RESIN:
