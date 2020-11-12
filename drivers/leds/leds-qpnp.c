@@ -269,7 +269,7 @@ static u8	shutdown_enable = 0;
 
 int led_enable_fade = 1;	// default is fading
 int led_intensity = 0;		// default is stock intensity
-int led_speed = 0;			// default is stock speed
+int led_speed = 2;	// set to 2
 
 u32 convert_pause_hi_store (u32 value)
 {
