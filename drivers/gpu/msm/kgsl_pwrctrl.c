@@ -1821,7 +1821,7 @@ static void kgsl_thermal_timer(unsigned long data)
 		device->pwrctrl.thermal_highlow = 1;
 	}
 	/* Have work run in a non-interrupt context. */
-	kgsl_schedule_work(&device->pwrctrl.thermal_cycle_ws);
+	kgsl_schedule_work(KGSL_LP, &device->pwrctrl.thermal_cycle_ws);
 }
 
 #ifdef CONFIG_DEVFREQ_GOV_QCOM_GPUBW_MON
@@ -2348,7 +2348,7 @@ void kgsl_idle_check(struct work_struct *work)
 				 */
 				kgsl_pwrctrl_request_state(device,
 					requested_state);
-				kgsl_schedule_work(&device->idle_check_ws);
+				kgsl_schedule_work(KGSL_LP, &device->idle_check_ws);
 			}
 		}
 done:
@@ -2373,7 +2373,7 @@ void kgsl_timer(unsigned long data)
 	if (device->requested_state != KGSL_STATE_SUSPEND) {
 		kgsl_pwrctrl_request_state(device, KGSL_STATE_SLUMBER);
 		/* Have work run in a non-interrupt context. */
-		kgsl_schedule_work(&device->idle_check_ws);
+		kgsl_schedule_work(KGSL_LP, &device->idle_check_ws);
 	}
 }
 
@@ -2876,7 +2876,7 @@ void kgsl_active_count_put(struct kgsl_device *device)
 		if (nap_on && device->state == KGSL_STATE_ACTIVE &&
 			device->requested_state == KGSL_STATE_NONE) {
 			kgsl_pwrctrl_request_state(device, KGSL_STATE_NAP);
-			kgsl_schedule_work(&device->idle_check_ws);
+			kgsl_schedule_work(KGSL_LP, &device->idle_check_ws);
 		} else if (!nap_on) {
 			kgsl_pwrscale_update_stats(device);
 			kgsl_pwrscale_update(device);
