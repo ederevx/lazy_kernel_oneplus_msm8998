@@ -3287,7 +3287,7 @@ static void a5xx_cp_callback(struct adreno_device *adreno_dev, int bit)
 			adreno_writereg(adreno_dev, ADRENO_REG_RBBM_INT_0_MASK,
 					gpudev->irq->mask);
 
-			kgsl_schedule_work(&adreno_dev->irq_storm_work);
+			kgsl_schedule_work(KGSL_PERF, &adreno_dev->irq_storm_work);
 
 			return;
 		}
@@ -3331,7 +3331,7 @@ static void a5xx_gpmu_int_callback(struct adreno_device *adreno_dev, int bit)
 				/* Stop GPMU */
 				kgsl_regwrite(device,
 					A5XX_GPMU_CM3_SYSRESET, 1);
-				kgsl_schedule_work(&adreno_dev->gpmu_work);
+				kgsl_schedule_work(KGSL_PERF, &adreno_dev->gpmu_work);
 			}
 			/* fallthrough */
 		case BIT(FW_INTR_INFO):
