@@ -27,6 +27,7 @@
 #include <linux/dma-attrs.h>
 #include <linux/uaccess.h>
 #include <linux/kthread.h>
+#include <linux/cpumask.h>
 #include <asm/cacheflush.h>
 
 /*
@@ -539,13 +540,16 @@ static inline int timestamp_cmp(unsigned int a, unsigned int b)
 	return ((a > b) && (a - b <= KGSL_TIMESTAMP_WINDOW)) ? 1 : -1;
 }
 
+#define KGSL_PERF cpumask_first_and(cpu_perf_mask, cpu_active_mask)
+#define KGSL_LP cpumask_first_and(cpu_lp_mask, cpu_active_mask)
+
 /**
  * kgsl_schedule_work() - Schedule a work item on the KGSL workqueue
  * @work: work item to schedule
  */
-static inline void kgsl_schedule_work(struct work_struct *work)
+static inline void kgsl_schedule_work(int cpu, struct work_struct *work)
 {
-	queue_work(kgsl_driver.workqueue, work);
+	queue_work_on(cpu, kgsl_driver.workqueue, work);
 }
 
 static inline int
