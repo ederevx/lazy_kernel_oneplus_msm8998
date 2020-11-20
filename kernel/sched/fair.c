@@ -5259,113 +5259,6 @@ static void dequeue_task_fair(struct rq *rq, struct task_struct *p, int flags)
 DEFINE_PER_CPU(cpumask_var_t, load_balance_mask);
 DEFINE_PER_CPU(cpumask_var_t, select_idle_mask);
 
-/*
- * per rq 'load' arrray crap; XXX kill this.
- */
-
-/*
- * The exact cpuload at various idx values, calculated at every tick would be
- * load = (2^idx - 1) / 2^idx * load + 1 / 2^idx * cur_load
- *
- * If a cpu misses updates for n-1 ticks (as it was idle) and update gets called
- * on nth tick when cpu may be busy, then we have:
- * load = ((2^idx - 1) / 2^idx)^(n-1) * load
- * load = (2^idx - 1) / 2^idx) * load + 1 / 2^idx * cur_load
- *
- * decay_load_missed() below does efficient calculation of
- * load = ((2^idx - 1) / 2^idx)^(n-1) * load
- * avoiding 0..n-1 loop doing load = ((2^idx - 1) / 2^idx) * load
- *
- * The calculation is approximated on a 128 point scale.
- * degrade_zero_ticks is the number of ticks after which load at any
- * particular idx is approximated to be zero.
- * degrade_factor is a precomputed table, a row for each load idx.
- * Each column corresponds to degradation factor for a power of two ticks,
- * based on 128 point scale.
- * Example:
- * row 2, col 3 (=12) says that the degradation at load idx 2 after
- * 8 ticks is 12/128 (which is an approximation of exact factor 3^8/4^8).
- *
- * With this power of 2 load factors, we can degrade the load n times
- * by looking at 1 bits in n and doing as many mult/shift instead of
- * n mult/shifts needed by the exact degradation.
- */
-#define DEGRADE_SHIFT		7
-static const unsigned char
-		degrade_zero_ticks[CPU_LOAD_IDX_MAX] = {0, 8, 32, 64, 128};
-static const unsigned char
-		degrade_factor[CPU_LOAD_IDX_MAX][DEGRADE_SHIFT + 1] = {
-					{0, 0, 0, 0, 0, 0, 0, 0},
-					{64, 32, 8, 0, 0, 0, 0, 0},
-					{96, 72, 40, 12, 1, 0, 0},
-					{112, 98, 75, 43, 15, 1, 0},
-					{120, 112, 98, 76, 45, 16, 2} };
-
-/*
- * Update cpu_load for any missed ticks, due to tickless idle. The backlog
- * would be when CPU is idle and so we just decay the old load without
- * adding any new load.
- */
-static unsigned long
-decay_load_missed(unsigned long load, unsigned long missed_updates, int idx)
-{
-	int j = 0;
-
-	if (!missed_updates)
-		return load;
-
-	if (missed_updates >= degrade_zero_ticks[idx])
-		return 0;
-
-	if (idx == 1)
-		return load >> missed_updates;
-
-	while (missed_updates) {
-		if (missed_updates % 2)
-			load = (load * degrade_factor[idx][j]) >> DEGRADE_SHIFT;
-
-		missed_updates >>= 1;
-		j++;
-	}
-	return load;
-}
-
-/*
- * Update rq->cpu_load[] statistics. This function is usually called every
- * scheduler tick (TICK_NSEC). With tickless idle this will not be called
- * every tick. We fix it up based on jiffies.
- */
-static void __update_cpu_load(struct rq *this_rq, unsigned long this_load,
-			      unsigned long pending_updates)
-{
-	int i, scale;
-
-	this_rq->nr_load_updates++;
-
-	/* Update our load: */
-	this_rq->cpu_load[0] = this_load; /* Fasttrack for idx 0 */
-	for (i = 1, scale = 2; i < CPU_LOAD_IDX_MAX; i++, scale += scale) {
-		unsigned long old_load, new_load;
-
-		/* scale is effectively 1 << i now, and >> i divides by scale */
-
-		old_load = this_rq->cpu_load[i];
-		old_load = decay_load_missed(old_load, pending_updates - 1, i);
-		new_load = this_load;
-		/*
-		 * Round up the averaging division if load is increasing. This
-		 * prevents us from getting stuck on 9 if the load is 10, for
-		 * example.
-		 */
-		if (new_load > old_load)
-			new_load += scale - 1;
-
-		this_rq->cpu_load[i] = (old_load * (scale - 1) + new_load) >> i;
-	}
-
-	sched_avg_update(this_rq);
-}
-
 static unsigned long weighted_cpuload(const int cpu)
 {
 	return cfs_rq_runnable_load_avg(&cpu_rq(cpu)->cfs);
@@ -5386,25 +5279,20 @@ static unsigned long weighted_cpuload(const int cpu)
  */
 
 /*
- * Called from nohz_idle_balance() to update the load ratings before doing the
- * idle balance.
+ * Called from nohz_idle_balance() to update last update jiffy time.
  */
-static void update_idle_cpu_load(struct rq *this_rq)
+static void update_idle_cpu_load_tick(struct rq *this_rq)
 {
 	unsigned long curr_jiffies = READ_ONCE(jiffies);
 	unsigned long load = weighted_cpuload(cpu_of(this_rq));
-	unsigned long pending_updates;
 
 	/*
 	 * bail if there's load or we're actually up-to-date.
 	 */
-	if (load || curr_jiffies == this_rq->last_load_update_tick)
+	if (load || curr_jiffies <= this_rq->last_load_update_tick)
 		return;
 
-	pending_updates = curr_jiffies - this_rq->last_load_update_tick;
 	this_rq->last_load_update_tick = curr_jiffies;
-
-	__update_cpu_load(this_rq, load, pending_updates);
 }
 
 /*
@@ -5414,39 +5302,21 @@ void update_cpu_load_nohz(void)
 {
 	struct rq *this_rq = this_rq();
 	unsigned long curr_jiffies = READ_ONCE(jiffies);
-	unsigned long pending_updates;
 	struct rq_flags rf;
 
-	if (curr_jiffies == this_rq->last_load_update_tick)
+	if (curr_jiffies <= this_rq->last_load_update_tick)
 		return;
 
 	rq_lock(this_rq, &rf);
-	pending_updates = curr_jiffies - this_rq->last_load_update_tick;
-	if (pending_updates) {
-		this_rq->last_load_update_tick = curr_jiffies;
-		/*
-		 * We were idle, this means load 0, the current load might be
-		 * !0 due to remote wakeups and the sort.
-		 */
-		update_rq_clock(this_rq);
-		__update_cpu_load(this_rq, 0, pending_updates);
-	}
+	this_rq->last_load_update_tick = curr_jiffies;
+	/*
+	 * We were idle, this means load 0, the current load might be
+	 * !0 due to remote wakeups and the sort.
+	 */
+	update_rq_clock(this_rq);
 	rq_unlock(this_rq, &rf);
 }
 #endif /* CONFIG_NO_HZ */
-
-/*
- * Called from scheduler_tick()
- */
-void update_cpu_load_active(struct rq *this_rq)
-{
-	unsigned long load = weighted_cpuload(cpu_of(this_rq));
-	/*
-	 * See the mess around update_idle_cpu_load() / update_cpu_load_nohz().
-	 */
-	this_rq->last_load_update_tick = jiffies;
-	__update_cpu_load(this_rq, load, 1);
-}
 
 static unsigned long cpu_avg_load_per_task(int cpu)
 {
@@ -9078,7 +8948,7 @@ static inline void update_cpu_stats_if_tickless(struct rq *rq)
 
 		raw_spin_lock(&rq->lock);
 		update_rq_clock(rq);
-		update_idle_cpu_load(rq);
+		update_idle_cpu_load_tick(rq);
 		update_cfs_rq_load_avg(rq->clock_task, &rq->cfs, false);
 		raw_spin_unlock(&rq->lock);
 	}
@@ -10889,7 +10759,7 @@ static void nohz_idle_balance(struct rq *this_rq, enum cpu_idle_type idle)
 
 			rq_lock_irq(rq, &rf);
 			update_rq_clock(rq);
-			update_idle_cpu_load(rq);
+			update_idle_cpu_load_tick(rq);
 			rq_unlock_irq(rq, &rf);
 
 			update_blocked_averages(balance_cpu);
