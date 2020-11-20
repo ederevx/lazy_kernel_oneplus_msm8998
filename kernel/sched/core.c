@@ -3230,7 +3230,7 @@ void scheduler_tick(void)
 			walt_ktime_clock(), 0);
 	update_rq_clock(rq);
 	curr->sched_class->task_tick(rq, curr, 0);
-	update_cpu_load_active(rq);
+	rq->last_load_update_tick = jiffies;
 	calc_global_load_tick(rq);
 
 	rq_unlock(rq, &rf);
@@ -5940,7 +5940,7 @@ static struct ctl_table *
 sd_alloc_ctl_domain_table(struct sched_domain *sd)
 {
 	struct ctl_table *table;
-	unsigned int nr_entries = 14;
+	unsigned int nr_entries = 9;
 
 	int i = 0;
 	struct sched_group *sg = sd->groups;
@@ -5962,34 +5962,24 @@ sd_alloc_ctl_domain_table(struct sched_domain *sd)
 		sizeof(long), 0644, proc_doulongvec_minmax, false);
 	set_table_entry(&table[1], "max_interval", &sd->max_interval,
 		sizeof(long), 0644, proc_doulongvec_minmax, false);
-	set_table_entry(&table[2], "busy_idx", &sd->busy_idx,
-		sizeof(int), 0644, proc_dointvec_minmax, true);
-	set_table_entry(&table[3], "idle_idx", &sd->idle_idx,
-		sizeof(int), 0644, proc_dointvec_minmax, true);
-	set_table_entry(&table[4], "newidle_idx", &sd->newidle_idx,
-		sizeof(int), 0644, proc_dointvec_minmax, true);
-	set_table_entry(&table[5], "wake_idx", &sd->wake_idx,
-		sizeof(int), 0644, proc_dointvec_minmax, true);
-	set_table_entry(&table[6], "forkexec_idx", &sd->forkexec_idx,
-		sizeof(int), 0644, proc_dointvec_minmax, true);
-	set_table_entry(&table[7], "busy_factor", &sd->busy_factor,
+	set_table_entry(&table[2], "busy_factor", &sd->busy_factor,
 		sizeof(int), 0644, proc_dointvec_minmax, false);
-	set_table_entry(&table[8], "imbalance_pct", &sd->imbalance_pct,
+	set_table_entry(&table[3], "imbalance_pct", &sd->imbalance_pct,
 		sizeof(int), 0644, proc_dointvec_minmax, false);
-	set_table_entry(&table[9], "cache_nice_tries",
+	set_table_entry(&table[4], "cache_nice_tries",
 		&sd->cache_nice_tries,
 		sizeof(int), 0644, proc_dointvec_minmax, false);
-	set_table_entry(&table[10], "flags", &sd->flags,
+	set_table_entry(&table[5], "flags", &sd->flags,
 		sizeof(int), 0644, proc_dointvec_minmax, false);
-	set_table_entry(&table[11], "max_newidle_lb_cost",
+	set_table_entry(&table[6], "max_newidle_lb_cost",
 		&sd->max_newidle_lb_cost,
 		sizeof(long), 0644, proc_doulongvec_minmax, false);
-	set_table_entry(&table[12], "name", sd->name,
+	set_table_entry(&table[7], "name", sd->name,
 		CORENAME_MAX_SIZE, 0444, proc_dostring, false);
 	sg = sd->groups;
 	if (sg->sge) {
 		char buf[32];
-		struct ctl_table *entry = &table[13];
+		struct ctl_table *entry = &table[8];
 
 		do {
 			snprintf(buf, 32, "group%d", i);
@@ -7228,11 +7218,6 @@ sd_init(struct sched_domain_topology_level *tl,
 		.imbalance_pct		= 125,
 
 		.cache_nice_tries	= 0,
-		.busy_idx		= 0,
-		.idle_idx		= 0,
-		.newidle_idx		= 0,
-		.wake_idx		= 0,
-		.forkexec_idx		= 0,
 
 		.flags			= 1*SD_LOAD_BALANCE
 					| 1*SD_BALANCE_NEWIDLE
@@ -7281,13 +7266,10 @@ sd_init(struct sched_domain_topology_level *tl,
 	} else if (sd->flags & SD_SHARE_PKG_RESOURCES) {
 		sd->imbalance_pct = 117;
 		sd->cache_nice_tries = 1;
-		sd->busy_idx = 2;
 
 #ifdef CONFIG_NUMA
 	} else if (sd->flags & SD_NUMA) {
 		sd->cache_nice_tries = 2;
-		sd->busy_idx = 3;
-		sd->idle_idx = 2;
 
 		sd->flags |= SD_SERIALIZE;
 		if (sched_domains_numa_distance[tl->numa_level] > RECLAIM_DISTANCE) {
@@ -7300,8 +7282,6 @@ sd_init(struct sched_domain_topology_level *tl,
 	} else {
 		sd->flags |= SD_PREFER_SIBLING;
 		sd->cache_nice_tries = 1;
-		sd->busy_idx = 2;
-		sd->idle_idx = 1;
 	}
 
 	/*
@@ -8192,7 +8172,7 @@ DECLARE_PER_CPU(cpumask_var_t, select_idle_mask);
 
 void __init sched_init(void)
 {
-	int i, j;
+	int i;
 	unsigned long alloc_size = 0, ptr;
 
 	BUG_ON(num_possible_cpus() > BITS_PER_LONG);
@@ -8297,9 +8277,6 @@ void __init sched_init(void)
 #ifdef CONFIG_RT_GROUP_SCHED
 		init_tg_rt_entry(&root_task_group, &rq->rt, NULL, i, NULL);
 #endif
-
-		for (j = 0; j < CPU_LOAD_IDX_MAX; j++)
-			rq->cpu_load[j] = 0;
 
 		rq->last_load_update_tick = jiffies;
 
