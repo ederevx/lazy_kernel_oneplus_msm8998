@@ -698,11 +698,6 @@ retry:
 	if (!r->initialized && r->entropy_total > 128) {
 		r->initialized = 1;
 		r->entropy_total = 0;
-		if (r == &nonblocking_pool) {
-			process_random_ready_list();
-			wake_up_all(&urandom_init_wait);
-			pr_notice("random: %s pool is initialized\n", r->name);
-		}
 	}
 
 	trace_credit_entropy_bits(r->name, nbits,
