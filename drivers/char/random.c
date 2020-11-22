@@ -698,6 +698,11 @@ retry:
 	if (!r->initialized && r->entropy_total > 128) {
 		r->initialized = 1;
 		r->entropy_total = 0;
+		if (r == &nonblocking_pool) {
+			process_random_ready_list();
+			wake_up_all(&urandom_init_wait);
+			pr_notice("random: %s pool is initialized\n", r->name);
+		}
 	}
 
 	trace_credit_entropy_bits(r->name, nbits,
@@ -1077,7 +1082,6 @@ void add_interrupt_randomness(int irq, int irq_flags)
 
 	fast_mix(fast_pool);
 	add_interrupt_bench(cycles);
-	this_cpu_add(net_rand_state.s1, fast_pool->pool[cycles & 3]);
 
 	if (!crng_ready()) {
 		if ((fast_pool->count >= 64) &&
