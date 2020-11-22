@@ -17699,6 +17699,10 @@ static QDF_STATUS extract_ndp_confirm_tlv(wmi_unified_t wmi_handle,
 	WMI_MAC_ADDR_TO_CHAR_ARRAY(&fixed_params->peer_ndi_mac_addr,
 				   rsp->peer_ndi_mac_addr.bytes);
 	rsp->ndp_info.ndp_app_info_len = fixed_params->ndp_app_info_len;
+
+	if (rsp->ndp_info.ndp_app_info_len > NDP_APP_INFO_LEN)
+		rsp->ndp_info.ndp_app_info_len = NDP_APP_INFO_LEN;
+
 	qdf_mem_copy(rsp->ndp_info.ndp_app_info, event->ndp_app_info,
 		     rsp->ndp_info.ndp_app_info_len);
 
@@ -23962,12 +23966,7 @@ extract_roam_scan_ap_stats_tlv(wmi_unified_t wmi_handle, void *evt_buf,
 	uint8_t i;
 
 	param_buf = (WMI_ROAM_STATS_EVENTID_param_tlvs *)evt_buf;
-	if (!param_buf) {
-		WMI_LOGE("%s Param buf is NULL", __func__);
-		return QDF_STATUS_E_FAILURE;
-	}
-
-	if (ap_idx >= param_buf->num_roam_ap_info) {
+	if (!param_buf || ap_idx >= param_buf->num_roam_ap_info) {
 		WMI_LOGE("Invalid roam scan AP tlv ap_idx:%d total_ap:%d",
 			 ap_idx, param_buf->num_roam_ap_info);
 		return QDF_STATUS_E_FAILURE;
