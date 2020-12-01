@@ -24,12 +24,6 @@
 #include "mdss_panel.h"
 #include "mdss_mdp_splash_logo.h"
 
-#ifdef CONFIG_FLICKER_FREE
-#include "flicker_free.h"
-struct msm_fb_data_type *get_mfd_copy(void);
-u32 get_bkl_lvl(void);
-#endif
-
 #define MDSS_LPAE_CHECK(phys)	\
 	((sizeof(phys) > sizeof(unsigned long)) ? ((phys >> 32) & 0xFF) : (0))
 
