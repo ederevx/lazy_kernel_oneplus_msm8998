@@ -1103,12 +1103,12 @@ static int pp_pcc_get_config(char __iomem *base_addr, void *cfg_data,
 
 	if (copy_to_user(pcc_cfg->cfg_payload, &pcc_data,
 			 sizeof(pcc_data))) {
-	#ifdef CONFIG_FLICKER_FREE
+#ifdef CONFIG_FLICKER_FREE
 		memcpy(pcc_cfg->cfg_payload,  &pcc_data, sizeof(pcc_data));
-	#else
+#else
 		pr_err("failed to copy the pcc info into payload\n");
 		return -EFAULT;
-	#endif
+#endif
 	}
 
 	return 0;
