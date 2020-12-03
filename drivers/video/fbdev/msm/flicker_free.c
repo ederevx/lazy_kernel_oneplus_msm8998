@@ -45,14 +45,11 @@
 /* Minimum value of RGB recommended */
 #define FF_MIN_SCALE 2560 
 
-/* Max elvss off threshold */
-#define MAX_ELVSS_OFF 128
-
 /* Number of backlight entries */
 #define BACKLIGHT_INDEX 66
 
 /* Minimum backlight value that does not flicker */
-static int elvss_off_threshold = 90;
+static int elvss_off_threshold = 66;
 
 /* Framebuffer state notifier */
 static struct notifier_block fb_notifier;
@@ -137,7 +134,7 @@ static int flicker_free_push(int val)
 				mdss_mdp_kernel_pcc_config(ff_mfd_copy, &pcc_config, &copyback);
 }
 
-static __always_inline uint32_t __mdss_panel_calc_backlight(uint32_t bl_lvl)
+static inline uint32_t __mdss_panel_calc_backlight(uint32_t bl_lvl)
 {
 	if (bl_lvl != 0) {
 		if (mdss_backlight_enable && bl_lvl < elvss_off_threshold && 
@@ -238,9 +235,7 @@ static ssize_t eot_write_proc(struct file *file, const char __user *buffer,
 	if (ret)
 		goto end;
 
-	/* Only allow values within limit */
-	if (value < MAX_ELVSS_OFF)
-		elvss_off_threshold = value;
+	elvss_off_threshold = value;
 end:
 	kfree(tmp);
 	return ret ? EFAULT : count;
