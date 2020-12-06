@@ -51,9 +51,6 @@
 /* Minimum backlight value that does not flicker */
 static int elvss_off_threshold = 66;
 
-/* Framebuffer state notifier */
-static struct notifier_block fb_notifier;
-
 /* Proc directory entries */
 static struct proc_dir_entry *root_entry, *enabled, *minbright;
 
@@ -81,7 +78,6 @@ uint32_t ff_bl_lvl_cpy;
 /* State booleans */
 static bool pcc_enabled = false;
 static bool mdss_backlight_enable = false;
-static bool disable_flicker_free = false;
 
 static int flicker_free_push(int val)
 {
@@ -98,9 +94,8 @@ static int flicker_free_push(int val)
 	}
 
 	/* Configure dither values */
-	dither_config.flags = MDP_PP_OPS_WRITE | 
-		((mdss_backlight_enable && !disable_flicker_free) ?
-							MDP_PP_OPS_ENABLE : MDP_PP_OPS_DISABLE);
+	dither_config.flags = MDP_PP_OPS_WRITE | (mdss_backlight_enable ?
+										MDP_PP_OPS_ENABLE : MDP_PP_OPS_DISABLE);
 
 	dither_config.r_cr_depth = depth;
 	dither_config.g_y_depth = depth;
@@ -117,7 +112,7 @@ static int flicker_free_push(int val)
 
 	/* Configure pcc values */
 	pcc_config.ops = MDP_PP_OPS_WRITE | (pcc_enabled ?
-						MDP_PP_OPS_ENABLE : MDP_PP_OPS_DISABLE);
+							MDP_PP_OPS_ENABLE : MDP_PP_OPS_DISABLE);
 
 	pcc_config.r.r = temp;
 	pcc_config.g.g = temp;
@@ -134,37 +129,18 @@ static int flicker_free_push(int val)
 				mdss_mdp_kernel_pcc_config(ff_mfd_copy, &pcc_config, &copyback);
 }
 
-static inline uint32_t __mdss_panel_calc_backlight(uint32_t bl_lvl)
+uint32_t mdss_panel_calc_backlight(uint32_t bl_lvl)
 {
-	if (bl_lvl != 0) {
-		if (mdss_backlight_enable && bl_lvl < elvss_off_threshold && 
-				!disable_flicker_free) {
-			pcc_enabled = true;
-			if (!flicker_free_push(bl_lvl))
-				return elvss_off_threshold;
-		} else if (pcc_enabled) {
-			pcc_enabled = false;
-			flicker_free_push(elvss_off_threshold);
-		}
+	if (mdss_backlight_enable && bl_lvl < elvss_off_threshold) {
+		pcc_enabled = true;
+		if (!flicker_free_push(bl_lvl))
+			return elvss_off_threshold;
+	} else if (pcc_enabled) {
+		pcc_enabled = false;
+		flicker_free_push(elvss_off_threshold);
 	}
 
 	return bl_lvl;
-}
-
-uint32_t mdss_panel_calc_backlight(uint32_t bl_lvl)
-{
-	return __mdss_panel_calc_backlight(bl_lvl);
-}
-
-static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
-			  void *data)
-{
-	int *blank = ((struct fb_event *) data)->data;
-
-	if (action == FB_EARLY_EVENT_BLANK)
-		disable_flicker_free = *blank != FB_BLANK_UNBLANK;
-
-	return NOTIFY_OK;
 }
 
 /*
@@ -180,20 +156,18 @@ static ssize_t ff_write_proc(struct file *file, const char __user *buffer,
 	get_user(value, buffer);
 	state = value != '0';
 
-	if (mdss_backlight_enable == state)
-		goto end;
+	if (mdss_backlight_enable != state) {
+		mdss_backlight_enable = state;
 
-	mdss_backlight_enable = state;
+		if (!unlikely(ff_mfd_copy))
+			goto end;
 
-	if (!ff_mfd_copy)
-		goto end;
+		pdata = dev_get_platdata(&ff_mfd_copy->pdev->dev);
+		if (unlikely(!pdata || !pdata->set_backlight))
+			goto end;
 
-	pdata = dev_get_platdata(&ff_mfd_copy->pdev->dev);
-	if (!pdata || !pdata->set_backlight)
-		goto end;
-
-	pdata->set_backlight(pdata, 
-		!enabled ? ff_bl_lvl_cpy : __mdss_panel_calc_backlight(ff_bl_lvl_cpy));
+		pdata->set_backlight(pdata, ff_bl_lvl_cpy);
+	}
 end:
 	return count;
 }
@@ -278,12 +252,6 @@ static int __init flicker_free_init(void)
 	dither_config.block = MDP_LOGICAL_BLOCK_DISP_0;
 	dither_payload = kzalloc(sizeof(struct mdp_dither_data_v1_7), GFP_USER);
 
-	fb_notifier.notifier_call = fb_notifier_cb;
-	fb_notifier.priority = INT_MAX;
-	ret = fb_register_client(&fb_notifier);
-	if (ret)
-		goto end;
-
 	/* File operations init */
 	root_entry = proc_mkdir("flicker_free", NULL);
 
@@ -307,7 +275,6 @@ static void __exit flicker_free_exit(void)
 {
 	kfree(payload);
 	kfree(dither_payload);
-	fb_unregister_client(&fb_notifier);
 	remove_proc_entry("flicker_free", root_entry);
 	remove_proc_entry("min_brightness", root_entry);
 }
