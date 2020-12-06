@@ -2100,10 +2100,8 @@ void mdss_fb_set_backlight(struct msm_fb_data_type *mfd, u32 bkl_lvl)
 #ifdef CONFIG_FLICKER_FREE
 			ff_mfd_copy = mfd;
 			ff_bl_lvl_cpy = temp;
-			pdata->set_backlight(pdata, mdss_panel_calc_backlight(temp));
-#else
-			pdata->set_backlight(pdata, temp);
 #endif
+			pdata->set_backlight(pdata, temp);
 			mfd->bl_level = bkl_lvl;
 			mfd->bl_level_scaled = temp;
 		}
@@ -2140,10 +2138,8 @@ void mdss_fb_update_backlight(struct msm_fb_data_type *mfd)
 #ifdef CONFIG_FLICKER_FREE
 			ff_mfd_copy = mfd;
 			ff_bl_lvl_cpy = temp;
-			pdata->set_backlight(pdata, mdss_panel_calc_backlight(temp));
-#else
-			pdata->set_backlight(pdata, temp);
 #endif
+			pdata->set_backlight(pdata, temp);
 			mfd->bl_level_scaled = mfd->unset_bl_level;
 			mfd->allow_bl_update = true;
 		}
