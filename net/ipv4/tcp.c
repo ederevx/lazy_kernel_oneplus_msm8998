@@ -2849,11 +2849,11 @@ struct sk_buff *tcp_get_timestamping_opt_stats(const struct sock *sk)
 
 	tcp_get_info_chrono_stats(tp, &info);
 	nla_put(stats, TCP_NLA_BUSY,
-			  info.tcpi_busy_time, TCP_NLA_PAD);
+			  info.tcpi_busy_time, (void *)TCP_NLA_PAD);
 	nla_put(stats, TCP_NLA_RWND_LIMITED,
-			  info.tcpi_rwnd_limited, TCP_NLA_PAD);
+			  info.tcpi_rwnd_limited, (void *)TCP_NLA_PAD);
 	nla_put(stats, TCP_NLA_SNDBUF_LIMITED,
-			  info.tcpi_sndbuf_limited, TCP_NLA_PAD);
+			  info.tcpi_sndbuf_limited, (void *)TCP_NLA_PAD);
 	return stats;
 }
 
