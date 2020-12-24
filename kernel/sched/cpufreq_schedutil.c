@@ -107,8 +107,8 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 	 * the right set of CPUs and any CPU can find the next frequency and
 	 * schedule the kthread.
 	 */
-	if (sg_policy->policy->fast_switch_enabled &&
-	    !cpufreq_this_cpu_can_update(sg_policy->policy))
+	if (unlikely(sg_policy->policy->fast_switch_enabled &&
+	    !cpufreq_this_cpu_can_update(sg_policy->policy)))
 		return false;
 
 	if (unlikely(sg_policy->need_freq_update))
@@ -156,7 +156,8 @@ static bool sugov_update_next_freq(struct sugov_policy *sg_policy, u64 time,
 	return true;
 }
 
-static void sugov_fast_switch(struct sugov_policy *sg_policy, u64 time,
+static __maybe_unused 
+void sugov_fast_switch(struct sugov_policy *sg_policy, u64 time,
 			      unsigned int next_freq)
 {
 	struct cpufreq_policy *policy = sg_policy->policy;
@@ -376,7 +377,7 @@ static void sugov_update_single(struct update_util_data *hook, u64 time,
 	 * concurrently on two different CPUs for the same target and it is not
 	 * necessary to acquire the lock in the fast switch case.
 	 */
-	if (sg_policy->policy->fast_switch_enabled) {
+	if (unlikely(sg_policy->policy->fast_switch_enabled)) {
 		sugov_fast_switch(sg_policy, time, next_f);
 	} else {
 		raw_spin_lock(&sg_policy->update_lock);
@@ -451,7 +452,7 @@ static void sugov_update_shared(struct update_util_data *hook, u64 time,
 		else
 			next_f = sugov_next_freq_shared(sg_cpu, time);
 
-		if (sg_policy->policy->fast_switch_enabled)
+		if (unlikely(sg_policy->policy->fast_switch_enabled))
 			sugov_fast_switch(sg_policy, time, next_f);
 		else
 			sugov_deferred_update(sg_policy, time, next_f);
@@ -662,7 +663,7 @@ static int sugov_kthread_create(struct sugov_policy *sg_policy)
 	int ret;
 
 	/* kthread only required for slow path */
-	if (policy->fast_switch_enabled)
+	if (unlikely(policy->fast_switch_enabled))
 		return 0;
 
 	init_kthread_work(&sg_policy->work, sugov_work);
@@ -695,7 +696,7 @@ static int sugov_kthread_create(struct sugov_policy *sg_policy)
 static void sugov_kthread_stop(struct sugov_policy *sg_policy)
 {
 	/* kthread only required for slow path */
-	if (sg_policy->policy->fast_switch_enabled)
+	if (unlikely(sg_policy->policy->fast_switch_enabled))
 		return;
 
 	flush_kthread_worker(&sg_policy->worker);
@@ -934,7 +935,7 @@ static int sugov_stop(struct cpufreq_policy *policy)
 
 	synchronize_sched();
 
-	if (!policy->fast_switch_enabled) {
+	if (likely(!policy->fast_switch_enabled)) {
 		irq_work_sync(&sg_policy->irq_work);
 		kthread_cancel_work_sync(&sg_policy->work);
 	}
@@ -945,7 +946,7 @@ static int sugov_limits(struct cpufreq_policy *policy)
 {
 	struct sugov_policy *sg_policy = policy->governor_data;
 
-	if (!policy->fast_switch_enabled) {
+	if (likely(!policy->fast_switch_enabled)) {
 		mutex_lock(&sg_policy->work_lock);
 		cpufreq_policy_apply_limits(policy);
 		mutex_unlock(&sg_policy->work_lock);
