@@ -6480,11 +6480,6 @@ static const char * const cf_text[] = {
 	"CF_NEG_3DB_4HZ", "CF_NEG_3DB_75HZ", "CF_NEG_3DB_150HZ"
 };
 
-static const char * const rx_cf_text[] = {
-	"CF_NEG_3DB_4HZ", "CF_NEG_3DB_75HZ", "CF_NEG_3DB_150HZ",
-	"CF_NEG_3DB_0P48HZ"
-};
-
 static const struct soc_enum cf_dec0_enum =
 	SOC_ENUM_SINGLE(WCD9335_CDC_TX0_TX_PATH_CFG0, 5, 3, cf_text);
 
@@ -6511,60 +6506,6 @@ static const struct soc_enum cf_dec7_enum =
 
 static const struct soc_enum cf_dec8_enum =
 	SOC_ENUM_SINGLE(WCD9335_CDC_TX8_TX_PATH_CFG0, 5, 3, cf_text);
-
-static const struct soc_enum cf_int0_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX0_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int0_2_enum, WCD9335_CDC_RX0_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int1_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX1_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int1_2_enum, WCD9335_CDC_RX1_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int2_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX2_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int2_2_enum, WCD9335_CDC_RX2_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int3_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX3_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int3_2_enum, WCD9335_CDC_RX3_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int4_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX4_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int4_2_enum, WCD9335_CDC_RX4_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int5_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX5_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int5_2_enum, WCD9335_CDC_RX5_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int6_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX6_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int6_2_enum, WCD9335_CDC_RX6_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int7_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX7_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int7_2_enum, WCD9335_CDC_RX7_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
-
-static const struct soc_enum cf_int8_1_enum =
-	SOC_ENUM_SINGLE(WCD9335_CDC_RX8_RX_PATH_CFG2, 0, 4, rx_cf_text);
-
-static SOC_ENUM_SINGLE_DECL(cf_int8_2_enum, WCD9335_CDC_RX8_RX_PATH_MIX_CFG, 2,
-		     rx_cf_text);
 
 static const struct snd_soc_dapm_route audio_i2s_map[] = {
 	{"SLIM RX0 MUX", NULL, "RX_I2S_CTL"},
@@ -8669,25 +8610,6 @@ static const struct snd_kcontrol_new tasha_snd_controls[] = {
 	SOC_ENUM("TX6 HPF cut off", cf_dec6_enum),
 	SOC_ENUM("TX7 HPF cut off", cf_dec7_enum),
 	SOC_ENUM("TX8 HPF cut off", cf_dec8_enum),
-
-	SOC_ENUM("RX INT0_1 HPF cut off", cf_int0_1_enum),
-	SOC_ENUM("RX INT0_2 HPF cut off", cf_int0_2_enum),
-	SOC_ENUM("RX INT1_1 HPF cut off", cf_int1_1_enum),
-	SOC_ENUM("RX INT1_2 HPF cut off", cf_int1_2_enum),
-	SOC_ENUM("RX INT2_1 HPF cut off", cf_int2_1_enum),
-	SOC_ENUM("RX INT2_2 HPF cut off", cf_int2_2_enum),
-	SOC_ENUM("RX INT3_1 HPF cut off", cf_int3_1_enum),
-	SOC_ENUM("RX INT3_2 HPF cut off", cf_int3_2_enum),
-	SOC_ENUM("RX INT4_1 HPF cut off", cf_int4_1_enum),
-	SOC_ENUM("RX INT4_2 HPF cut off", cf_int4_2_enum),
-	SOC_ENUM("RX INT5_1 HPF cut off", cf_int5_1_enum),
-	SOC_ENUM("RX INT5_2 HPF cut off", cf_int5_2_enum),
-	SOC_ENUM("RX INT6_1 HPF cut off", cf_int6_1_enum),
-	SOC_ENUM("RX INT6_2 HPF cut off", cf_int6_2_enum),
-	SOC_ENUM("RX INT7_1 HPF cut off", cf_int7_1_enum),
-	SOC_ENUM("RX INT7_2 HPF cut off", cf_int7_2_enum),
-	SOC_ENUM("RX INT8_1 HPF cut off", cf_int8_1_enum),
-	SOC_ENUM("RX INT8_2 HPF cut off", cf_int8_2_enum),
 
 	SOC_SINGLE_EXT("IIR0 Enable Band1", IIR0, BAND1, 1, 0,
 	tasha_get_iir_enable_audio_mixer, tasha_put_iir_enable_audio_mixer),
@@ -12627,15 +12549,6 @@ static const struct tasha_reg_mask_val tasha_codec_reg_init_common_val[] = {
 	{WCD9335_CDC_RX6_RX_PATH_CFG0, 0x01, 0x01},
 	{WCD9335_CDC_RX7_RX_PATH_CFG0, 0x01, 0x01},
 	{WCD9335_CDC_RX8_RX_PATH_CFG0, 0x01, 0x01},
-	{WCD9335_CDC_RX0_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX1_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX2_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX3_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX4_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX5_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX6_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX7_RX_PATH_MIX_CFG, 0x01, 0x01},
-	{WCD9335_CDC_RX8_RX_PATH_MIX_CFG, 0x01, 0x01},
 	{WCD9335_VBADC_IBIAS_FE, 0x0C, 0x08},
 };
 
