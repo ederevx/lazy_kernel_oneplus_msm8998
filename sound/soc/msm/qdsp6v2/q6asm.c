@@ -3496,7 +3496,6 @@ static int __q6asm_open_read_write(struct audio_client *ac, uint32_t rd_format,
 	ac->topology = open.postprocopo_id;
 	ac->app_type = q6asm_get_asm_app_type_cal();
 
-
 	switch (wr_format) {
 	case FORMAT_LINEAR_PCM:
 	case FORMAT_MULTI_CHANNEL_LINEAR_PCM:
