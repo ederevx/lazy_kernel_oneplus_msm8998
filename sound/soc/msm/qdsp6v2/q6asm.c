@@ -3496,6 +3496,9 @@ static int __q6asm_open_read_write(struct audio_client *ac, uint32_t rd_format,
 	ac->topology = open.postprocopo_id;
 	ac->app_type = q6asm_get_asm_app_type_cal();
 
+	/* Force 24 bit for SA+ */
+	if (open.postprocopo_id == ASM_STREAM_POSTPROC_TOPO_ID_SA_PLUS)
+		open.bits_per_sample = 24;
 
 	switch (wr_format) {
 	case FORMAT_LINEAR_PCM:
