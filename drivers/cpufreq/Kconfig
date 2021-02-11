@@ -56,6 +56,52 @@ config CPU_FREQ_TIMES
 
          If in doubt, say N.
 
+config CPU_FREQ_DEFAULT_LIMITS
+	bool "CPU frequency default limit values"
+	depends on CPU_FREQ && SMP
+	default n
+	help
+     This will allow the initialization of default minimum and maximum CPU 
+	 frequecies set at policy init for low-power and performance cluster CPUs.
+
+     If in doubt, say N.
+
+if CPU_FREQ_DEFAULT_LIMITS
+
+config LP_CPU_MIN_FREQ
+    int "Default Low-power cluster CPU minimum frequency"
+    default 300000
+    help
+     This configures the minimum frequency for the CPUs in this cluster.
+
+     If in doubt, say N.
+
+config LP_CPU_MAX_FREQ
+    int "Default Low-power cluster CPU maximum frequency"
+    default 1900800
+    help
+     This configures the maximum frequency for the CPUs in this cluster.
+
+     If in doubt, say N.
+
+config PERF_CPU_MIN_FREQ
+    int "Default Performance cluster CPU minimum frequency"
+    default 300000
+    help
+     This configures the minimum frequency for the CPUs in this cluster.
+
+     If in doubt, say N.
+
+config PERF_CPU_MAX_FREQ
+    int "Default Performance cluster CPU maximum frequency"
+    default 2457600
+    help
+     This configures the maximum frequency for the CPUs in this cluster.
+
+     If in doubt, say N.
+
+endif
+
 choice
 	prompt "Default CPUFreq governor"
 	default CPU_FREQ_DEFAULT_GOV_USERSPACE if ARM_SA1100_CPUFREQ || ARM_SA1110_CPUFREQ
