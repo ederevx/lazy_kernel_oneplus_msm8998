@@ -17,6 +17,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/binfmts.h>
 #include <linux/cpu.h>
 #include <linux/cpufreq.h>
 #include <linux/cpufreq_times.h>
@@ -829,7 +830,7 @@ static ssize_t store_##file_name					\
 	int ret, temp;							\
 	struct cpufreq_policy new_policy;				\
 									\
-	if (&policy->object == &policy->min)				\
+	if (task_is_booster(current))				\
 		return count;						\
 									\
 	memcpy(&new_policy, policy, sizeof(*policy));			\
@@ -1224,6 +1225,18 @@ static int cpufreq_init_policy(struct cpufreq_policy *policy)
 			cpufreq_parse_governor(gov->name, &new_policy.policy,
 					       NULL);
 	}
+
+#ifdef CONFIG_CPU_FREQ_DEFAULT_LIMITS
+	/* Default min and max freq limits */
+	if (cpumask_test_cpu(policy->cpu, cpu_lp_mask)) {
+		new_policy.min = policy->user_policy.min = CONFIG_LP_CPU_MIN_FREQ;
+		new_policy.max = policy->user_policy.max = CONFIG_LP_CPU_MAX_FREQ;
+	} else {
+		new_policy.min = policy->user_policy.min = CONFIG_PERF_CPU_MIN_FREQ;
+		new_policy.max = policy->user_policy.max = CONFIG_PERF_CPU_MAX_FREQ;
+	}
+#endif
+
 	/* set default policy */
 	return cpufreq_set_policy(policy, &new_policy);
 }
