@@ -1373,6 +1373,34 @@ config SCHED_TUNE
 
 	  If unsure, say N.
 
+config DYNAMIC_STUNE
+	bool "Dynamic schedtune configuration"
+	depends on SCHED_TUNE && CGROUP_SCHEDTUNE
+	default y
+	help
+	  This option enables a simple driver that enables/disables schedtune
+	  parameters during runtime.
+
+	  If unsure, say N.
+
+if DYNAMIC_STUNE
+
+config DYNSTUNE_CORE_DURATION
+	int "Dynamic schedtune core duration in milliseconds"
+	default 250
+	range 10 10000
+	help
+	  Determines how long active schedtune values are applied.
+
+config DYNSTUNE_INPUT_TIME_FRAME
+	int "Dynamic schedtune time frame after input in milliseconds"
+	default 5000
+	range 10 10000
+	help
+	  Determines how long dynamic schedtune can remain active after an input.
+
+endif
+
 config STUNE_ASSIST
 	bool "SchedTune configuration helper"
 	depends on SCHED_TUNE
