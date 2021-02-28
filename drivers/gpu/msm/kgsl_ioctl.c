@@ -174,11 +174,13 @@ long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 	long ret;
 
 	if (cmd == IOCTL_KGSL_GPU_COMMAND &&
-#ifdef CONFIG_DYNAMIC_STUNE
-		dynstune_read_state() &&
-#endif
 	    READ_ONCE(device->state) != KGSL_STATE_ACTIVE)
 		kgsl_schedule_work(KGSL_PERF, &adreno_dev->pwr_on_work);
+
+#ifdef CONFIG_DYNAMIC_STUNE
+	if (cmd == IOCTL_KGSL_GPU_COMMAND)
+		dynstune_acquire_update();
+#endif
 
 	ret = kgsl_ioctl_helper(filep, cmd, arg, kgsl_ioctl_funcs,
 		ARRAY_SIZE(kgsl_ioctl_funcs));
