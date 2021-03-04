@@ -2,30 +2,59 @@
 /*
  * Copyright (C) 2021 Edrick Vince Sinsuan <sedrickvince@gmail.com>.
  */
-#include <linux/hrtimer.h>
 #include <linux/input.h>
 #include <linux/kthread.h>
 #include <linux/slab.h>
 
 #include <linux/dynamic_stune.h>
 
-#include "tune.h"
+enum {
+	CURR,
+	NEW
+};
 
 struct dynstune dss = {
-	.update = ATOMIC_INIT(0), .state = ATOMIC_INIT(0),
-	.waitq = __WAIT_QUEUE_HEAD_INITIALIZER(dss.waitq)
+	.update = ATOMIC_INIT(0), 
+	.state = { ATOMIC_INIT(0) }
 };
 
 struct dynstune_priv {
-	char *name;
 	struct dynstune *ds;
-	void (*set_func)(bool state);
-
-	atomic_t state;
-	struct hrtimer input_timer;
-
-	unsigned long duration[2];
+    struct task_struct *thread;
+	struct timer_list timer[MAX_DSS];
+	unsigned long duration[MAX_DSS];
+	int state[2];
 };
+
+static void wake_up_dynstune(struct dynstune_priv *dsp)
+{
+    struct task_struct *thread = dsp->thread;
+
+	if ((thread->state & TASK_IDLE) != 0)
+		wake_up_state(thread, TASK_IDLE);
+}
+
+static bool dynstune_cmpxchg_state(struct dynstune_priv *dsp, int req_curr)
+{
+	struct dynstune *ds = dsp->ds;
+	int *state = dsp->state, ret = (state[NEW] != state[CURR]);
+
+	/* Change atomics if curr state matches requirement */
+	if (state[CURR] == req_curr) {
+		state[NEW] = atomic_read(&ds->update);
+
+		ret = (state[NEW] != state[CURR]);
+		if (ret)
+			atomic_set(&ds->state[CORE], state[NEW]);
+
+		if (state[NEW]) {
+			atomic_set_release(&ds->update, 0);
+			mod_timer_pinned(&dsp->timer[CORE], jiffies + dsp->duration[CORE]);
+		}
+	}
+
+	return ret;
+}
 
 static int dynstune_thread(void *data)
 {
@@ -33,35 +62,36 @@ static int dynstune_thread(void *data)
 		.sched_priority = MAX_RT_PRIO - 1
 	};
 	struct dynstune_priv *dsp = data;
-	struct dynstune *ds = dsp->ds;
-	unsigned long duration = 0;
-	bool priv_state = false;
+	int *state = dsp->state;
 
 	sched_setscheduler_nocheck(current, SCHED_FIFO, &sched_max_rt_prio);
 
 	while (1) {
-		duration = priv_state ? dsp->duration[0] : MAX_SCHEDULE_TIMEOUT;
-		priv_state = !!wait_event_timeout(ds->waitq, (atomic_read(&ds->update) && 
-							atomic_read(&ds->state)), duration);
+		do {
+			set_current_state(TASK_IDLE);
+			schedule();
+		} while (unlikely(!dynstune_cmpxchg_state(dsp, 0)));
 
-		atomic_cmpxchg_release(&ds->update, 1, 0);
-
-		if ((duration != MAX_SCHEDULE_TIMEOUT) != priv_state) {
-			atomic_set(&dsp->state, priv_state);
-			dsp->set_func(priv_state);
-		}
+		pr_debug("dynstune: set stune = %d\n", state[NEW]);
+		dynamic_schedtune_set(state[NEW]);
+		state[CURR] = state[NEW];
 	}
 
 	return 0;
 }
 
-static enum hrtimer_restart input_timer_func(struct hrtimer *timer)
+static void core_timeout(unsigned long data)
 {
-	struct dynstune_priv *dsp = container_of(timer,
-						struct dynstune_priv, input_timer);
+	struct dynstune_priv *dsp = (struct dynstune_priv *)data;
 
-	atomic_set_release(&dsp->ds->state, 0);
-    return HRTIMER_NORESTART;
+	if (dynstune_cmpxchg_state(dsp, 1))
+		wake_up_dynstune(dsp);
+}
+
+static void input_timeout(unsigned long data)
+{
+	struct dynstune *ds = (struct dynstune *)data;
+	atomic_set(&ds->state[INPUT], 0);
 }
 
 static void dynstune_input(struct input_handle *handle,
@@ -70,11 +100,11 @@ static void dynstune_input(struct input_handle *handle,
 	struct dynstune_priv *dsp = handle->handler->private;
 	struct dynstune *ds = dsp->ds;
 
-	hrtimer_start(&dsp->input_timer, dsp->duration[1], HRTIMER_MODE_REL);
-	atomic_cmpxchg_acquire(&ds->state, 0, 1);
+	if (!mod_timer(&dsp->timer[INPUT], jiffies + dsp->duration[INPUT]))
+		atomic_set(&ds->state[INPUT], 1);
 
-	if (!atomic_read(&dsp->state) && atomic_read(&ds->update))
-		wake_up(&ds->waitq);
+	if (!atomic_read(&ds->state[CORE]) && atomic_read(&ds->update))
+		wake_up_dynstune(dsp);
 }
 
 static int dynstune_input_connect(struct input_handler *handler,
@@ -151,33 +181,26 @@ static struct input_handler dynstune_input_handler = {
 static int __init dynamic_stune_init(void)
 {
 	struct dynstune_priv *ds_priv;
-	struct task_struct *thread;
 	int ret = 0;
 
-	static const struct dynstune_priv dsp_init = {
-		.name = "dynstune_d", .ds = &dss,
-		.set_func = &dynamic_schedtune_set,
-		.state = ATOMIC_INIT(0)
-	};
-
-	ds_priv = kzalloc(sizeof(dsp_init), GFP_KERNEL);
+	ds_priv = kzalloc(sizeof(*ds_priv), GFP_KERNEL);
 	if (!ds_priv)
 		return -ENOMEM;
 
-	*ds_priv = dsp_init;
+	ds_priv->ds = &dss;
 
-	ds_priv->duration[0] = msecs_to_jiffies(CONFIG_DYNSTUNE_CORE_DURATION);
-	ds_priv->duration[1] = ms_to_ktime(CONFIG_DYNSTUNE_INPUT_TIME_FRAME);
+	ds_priv->duration[CORE] = msecs_to_jiffies(CONFIG_DYNSTUNE_CORE_DURATION);
+	ds_priv->duration[INPUT] = msecs_to_jiffies(CONFIG_DYNSTUNE_INPUT_TIME_FRAME);
 
-	thread = kthread_run_perf_critical(dynstune_thread, ds_priv, ds_priv->name);
-	if (IS_ERR(thread)) {
-		ret = PTR_ERR(thread);
+	setup_timer(&ds_priv->timer[CORE], core_timeout, (unsigned long)ds_priv);
+	setup_timer(&ds_priv->timer[INPUT], input_timeout, (unsigned long)ds_priv->ds);
+
+	ds_priv->thread = kthread_run_perf_critical(dynstune_thread, ds_priv, "dynstune_d");
+	if (IS_ERR(ds_priv->thread)) {
+		ret = PTR_ERR(ds_priv->thread);
 		pr_err("Failed to start stune thread, err: %d\n", ret);
 		goto err;
 	}
-
-	hrtimer_init(&ds_priv->input_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
-	ds_priv->input_timer.function = &input_timer_func;
 
 	dynstune_input_handler.private = ds_priv;
 	ret = input_register_handler(&dynstune_input_handler);
