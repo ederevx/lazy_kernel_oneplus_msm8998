@@ -11,6 +11,10 @@
 #include "sched.h"
 #include "tune.h"
 
+#ifdef CONFIG_DYNAMIC_STUNE
+#include <linux/dynamic_stune.h>
+#endif
+
 #ifdef CONFIG_CGROUP_SCHEDTUNE
 bool schedtune_initialized = false;
 #endif
@@ -620,12 +624,11 @@ boost_bias_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	struct schedtune *st = css_st(css);
 
 #ifdef CONFIG_DYNAMIC_STUNE
-	if (!strcmp(css->cgroup->kn->name, "foreground"))
+	if (st->dynamic_boost)
 		return 0;
 #endif
 
 	st->boost_bias = !!boost_bias;
-
 	return 0;
 }
 
@@ -693,7 +696,22 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 }
 
 #ifdef CONFIG_DYNAMIC_STUNE
-static s64
+static void dynamic_schedtune_write(struct schedtune *st, bool state)
+{
+	if (!st->dynamic_boost)
+		return;
+
+	if (st->dynamic_boost > 1) {
+		u64 boost = state ? st->dynamic_boost : 0;
+		boost_write(&st->css, NULL, boost);
+	} else {
+		st->boost_bias = state;
+	}
+
+	st->prefer_idle = state;
+}
+
+static u64
 dynamic_boost_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct schedtune *st = css_st(css);
@@ -703,24 +721,33 @@ dynamic_boost_read(struct cgroup_subsys_state *css, struct cftype *cft)
 
 static int
 dynamic_boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
-	    s64 dynamic_boost)
+	    u64 dynamic_boost)
 {
 	struct schedtune *st = css_st(css);
 
-	/* Only allow write for top-app */
-	if (strcmp(css->cgroup->kn->name, "top-app"))
-		return 0;
-
-	if (dynamic_boost < 0 || dynamic_boost > 100)
+	if (dynamic_boost > 100)
 		return -EINVAL;
 
+	/* Disable old values and set new ones */
+	dynamic_schedtune_write(st, false);
 	st->dynamic_boost = dynamic_boost;
-
-	/* Update boost */
-	if (dynamic_boost != st->boost)
-		boost_write(css, cft, dynamic_boost);
+	dynamic_schedtune_write(st, dynstune_read_state(CORE));
 
 	return 0;
+}
+
+void dynamic_schedtune_set(bool state)
+{
+	int idx;
+
+	for (idx = 0; idx < BOOSTGROUPS_COUNT; ++idx) {
+		struct schedtune *st = allocated_group[idx];
+
+		if (!st)
+			break;
+
+		dynamic_schedtune_write(st, state);
+	}
 }
 #endif
 
@@ -731,7 +758,7 @@ static int boost_write_wrapper(struct cgroup_subsys_state *css,
 		return 0;
 
 #ifdef CONFIG_DYNAMIC_STUNE
-	if (!strcmp(css->cgroup->kn->name, "top-app"))
+	if (css_st(css)->dynamic_boost)
 		return 0;
 #endif
 
@@ -745,7 +772,7 @@ static int prefer_idle_write_wrapper(struct cgroup_subsys_state *css,
 		return 0;
 
 #ifdef CONFIG_DYNAMIC_STUNE
-	if (!strcmp(css->cgroup->kn->name, "top-app"))
+	if (css_st(css)->dynamic_boost)
 		return 0;
 #endif
 
@@ -766,8 +793,8 @@ static struct cftype files[] = {
 #ifdef CONFIG_DYNAMIC_STUNE
 	{
 		.name = "dynamic_boost",
-		.read_s64 = dynamic_boost_read,
-		.write_s64 = dynamic_boost_write,
+		.read_u64 = dynamic_boost_read,
+		.write_u64 = dynamic_boost_write,
 	},
 #endif
 	{
@@ -812,7 +839,7 @@ static void write_default_values(struct cgroup_subsys_state *css)
 		{ "background",	0, 0, 0 },
 		{ "foreground",	0, 0, 0 },
 		{ "rt",		0, 0, 0 },
-		{ "top-app",	5, 0, 0 },
+		{ "top-app",	1, 0, 0 },
 	};
 	int i;
 
@@ -824,59 +851,19 @@ static void write_default_values(struct cgroup_subsys_state *css)
 				tgt.name, tgt.boost, tgt.boost_bias, tgt.prefer_idle);
 
 #ifdef CONFIG_DYNAMIC_STUNE
-			if (!strcmp(css->cgroup->kn->name, "top-app"))
-				dynamic_boost_write(css, NULL, tgt.boost);
-			else
-				boost_write(css, NULL, tgt.boost);
+			if (tgt.boost) {
+				int ret = dynamic_boost_write(css, NULL, tgt.boost);
+				/* Skip other values if successful */
+				if (!ret)
+					continue;
+			}
+#else
+			boost_write(css, NULL, tgt.boost);
 #endif
 			boost_bias_write(css, NULL, tgt.boost_bias);
 			prefer_idle_write(css, NULL, tgt.prefer_idle);
 		}
 	}
-}
-#endif
-
-#ifdef CONFIG_DYNAMIC_STUNE
-enum dsst_list {
-	TOP_APP,
-	FOREGROUND,
-	DSST_MAX
-};
-
-struct dynstune_st {
-	char *name;
-	struct schedtune *st;
-};
-
-static struct dynstune_st stored_dsst[DSST_MAX] __read_mostly = {
-	{ "top-app", NULL }, { "foreground", NULL }
-};
-
-static void dynstune_st_store(struct cgroup_subsys_state *css)
-{
-	enum dsst_list i;
-
-	for (i = 0; i < DSST_MAX; i++) {
-		if (!strcmp(css->cgroup->kn->name, stored_dsst[i].name))
-			stored_dsst[i].st = css_st(css);
-	}
-}
-
-void dynamic_schedtune_set(bool state)
-{
-	struct schedtune *st;
-
-	st = stored_dsst[TOP_APP].st;
-	if (likely(st)) {
-		s64 boost = state ? st->dynamic_boost : 0;
-
-		boost_write(&st->css, NULL, boost);
-		st->prefer_idle = state;
-	}
-
-	st = stored_dsst[FOREGROUND].st;
-	if (likely(st))
-		st->boost_bias = state;
 }
 #endif
 
@@ -900,9 +887,6 @@ schedtune_css_alloc(struct cgroup_subsys_state *parent_css)
 			break;
 #ifdef CONFIG_STUNE_ASSIST
 		write_default_values(&allocated_group[idx]->css);
-#endif
-#ifdef CONFIG_DYNAMIC_STUNE
-		dynstune_st_store(&allocated_group[idx]->css);
 #endif
 	}
 	if (idx == BOOSTGROUPS_COUNT) {
