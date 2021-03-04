@@ -5,18 +5,25 @@
 #ifndef _DYNAMIC_STUNE_H_
 #define _DYNAMIC_STUNE_H_
 
+enum dynstune_states {
+    CORE,
+    INPUT,
+    MAX_DSS
+};
+
 struct dynstune {
-    wait_queue_head_t waitq;
-    atomic_t update, state;
+    atomic_t update, state[MAX_DSS];
 };
 
 extern struct dynstune dss;
 
-#define dynstune_read_state() atomic_read(&dss.state)
-#define dynstune_acquire_update()                   \
-({                                                  \
-    if (waitqueue_active(&dss.waitq))               \
-        atomic_cmpxchg_acquire(&dss.update, 0, 1);  \
+#define dynstune_read_state(_dss) atomic_read(&dss.state[_dss])
+#define dynstune_acquire_update()                           \
+({                                                          \
+    if (dynstune_read_state(INPUT))                         \
+        atomic_cmpxchg_acquire(&dss.update, 0, 1);          \
 })
+
+void dynamic_schedtune_set(bool state);
 
 #endif /* _DYNAMIC_STUNE_H_ */
