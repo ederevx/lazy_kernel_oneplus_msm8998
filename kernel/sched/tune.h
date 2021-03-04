@@ -26,10 +26,6 @@ void schedtune_exit_task(struct task_struct *tsk);
 void schedtune_enqueue_task(struct task_struct *p, int cpu);
 void schedtune_dequeue_task(struct task_struct *p, int cpu);
 
-#ifdef CONFIG_DYNAMIC_STUNE
-void dynamic_schedtune_set(bool state);
-#endif
-
 #else /* CONFIG_CGROUP_SCHEDTUNE */
 
 #define schedtune_cpu_boost(cpu)  get_sysctl_sched_cfs_boost()
