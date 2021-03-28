@@ -24,6 +24,10 @@
 #include <soc/qcom/scm.h>
 #include "governor.h"
 
+#ifdef CONFIG_DYNAMIC_STUNE
+#include <linux/dynamic_stune.h>
+#endif
+
 static DEFINE_SPINLOCK(tz_lock);
 static DEFINE_SPINLOCK(sample_lock);
 static DEFINE_SPINLOCK(suspend_lock);
@@ -391,8 +395,14 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	priv->bin.busy_time += stats.busy_time;
 
 	/* scale busy time up based on adrenoboost parameter, only if MIN_BUSY exceeded */
-	if ((unsigned int)priv->bin.busy_time >= MIN_BUSY && adrenoboost)
-		priv->bin.busy_time += (stats.busy_time * adrenoboost * 3) / 2;
+#ifdef CONFIG_DYNAMIC_STUNE
+	if (adrenoboost > 0 && dynstune_read_state(CORE)) {
+#else
+	if (adrenoboost > 0) {
+#endif
+		if ((unsigned int)priv->bin.busy_time >= MIN_BUSY)
+			priv->bin.busy_time += (stats.busy_time * adrenoboost * 3) / 2;
+	}
 
 	if (stats.private_data)
 		context_count =  *((int *)stats.private_data);
