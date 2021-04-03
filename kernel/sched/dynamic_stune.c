@@ -4,6 +4,7 @@
  */
 #include <linux/input.h>
 #include <linux/kthread.h>
+#include <linux/pm_qos.h>
 #include <linux/slab.h>
 
 #include <linux/dynamic_stune.h>
@@ -56,10 +57,31 @@ static bool dynstune_cmpxchg_state(struct dynstune_priv *dsp, int req_curr)
 	return ret;
 }
 
+static void dynstune_pm_qos(struct pm_qos_request *req, bool state)
+{
+	if (likely(atomic_read(&req->cpus_affine))) {
+		if (likely(pm_qos_request_active(req)))
+			pm_qos_update_request(req, state ? 100 : PM_QOS_DEFAULT_VALUE);
+		else if (state)
+			pm_qos_add_request(req, PM_QOS_CPU_DMA_LATENCY, 100);	
+	} else {
+		/* 
+		 * Combined with prefer_idle, restricting idle to lp cluster creates an
+		 * ideal condition where Case A prefer_idle path will always lead to
+		 * a perf cluster CPU.
+		 */
+		atomic_set(&req->cpus_affine, BIT(*cpumask_bits(cpu_lp_mask)));
+	}
+}
+
 static int dynstune_thread(void *data)
 {
 	static const struct sched_param sched_max_rt_prio = {
 		.sched_priority = MAX_RT_PRIO - 1
+	};
+	struct pm_qos_request req = {
+		.type = PM_QOS_REQ_AFFINE_CORES,
+		.cpus_affine = ATOMIC_INIT(0)
 	};
 	struct dynstune_priv *dsp = data;
 	int *state = dsp->state;
@@ -72,6 +94,7 @@ static int dynstune_thread(void *data)
 			schedule();
 		} while (unlikely(!dynstune_cmpxchg_state(dsp, 0)));
 
+		dynstune_pm_qos(&req, state[NEW]);
 		pr_debug("dynstune: set stune = %d\n", state[NEW]);
 		dynamic_schedtune_set(state[NEW]);
 		state[CURR] = state[NEW];
