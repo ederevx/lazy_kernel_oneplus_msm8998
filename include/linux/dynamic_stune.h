@@ -13,6 +13,7 @@ enum dynstune_states {
 
 struct dynstune {
     atomic_t update, state[MAX_DSS];
+    void *priv_data;
 };
 
 extern struct dynstune dss;
@@ -25,5 +26,6 @@ extern struct dynstune dss;
 })
 
 void dynamic_schedtune_set(bool state);
+void dynstune_extend_timer(struct dynstune *ds);
 
 #endif /* _DYNAMIC_STUNE_H_ */
