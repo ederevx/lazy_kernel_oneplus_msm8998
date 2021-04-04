@@ -416,6 +416,11 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	}
 
 	*freq = devfreq->profile->freq_table[level];
+#ifdef CONFIG_DYNAMIC_STUNE
+	/* Do not drop perf if GPU is running at its max freq so extend timer */
+	if (*freq == devfreq->max_freq)
+		dynstune_extend_timer(&dss);
+#endif
 	return 0;
 }
 

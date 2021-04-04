@@ -80,6 +80,17 @@ static int dynstune_thread(void *data)
 	return 0;
 }
 
+void dynstune_extend_timer(struct dynstune *ds)
+{
+	struct dynstune_priv *dsp = ds->priv_data;
+
+	if (!dsp)
+		return;
+
+	if (!mod_timer(&dsp->timer[INPUT], jiffies + dsp->duration[INPUT]))
+		atomic_set(&ds->state[INPUT], 1);
+}
+
 static void core_timeout(unsigned long data)
 {
 	struct dynstune_priv *dsp = (struct dynstune_priv *)data;
@@ -206,6 +217,8 @@ static int __init dynamic_stune_init(void)
 	ret = input_register_handler(&dynstune_input_handler);
 	if (ret)
 		goto err;
+
+	dss.priv_data = ds_priv;
 
 	return 0;
 
