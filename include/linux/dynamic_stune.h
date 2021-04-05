@@ -12,20 +12,18 @@ enum dynstune_states {
 };
 
 struct dynstune {
-    atomic_t update, state[MAX_DSS];
-    void *priv_data;
+    atomic_t update[MAX_DSS], state[MAX_DSS];
 };
 
 extern struct dynstune dss;
 
 #define dynstune_read_state(_dss) atomic_read(&dss.state[_dss])
-#define dynstune_acquire_update()                           \
+#define dynstune_acquire_update(_dss)                       \
 ({                                                          \
     if (dynstune_read_state(INPUT))                         \
-        atomic_cmpxchg_acquire(&dss.update, 0, 1);          \
+        atomic_cmpxchg_acquire(&dss.update[_dss], 0, 1);    \
 })
 
 void dynamic_schedtune_set(bool state);
-void dynstune_extend_timer(struct dynstune *ds);
 
 #endif /* _DYNAMIC_STUNE_H_ */
