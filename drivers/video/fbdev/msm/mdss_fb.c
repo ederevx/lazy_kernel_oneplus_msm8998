@@ -3787,7 +3787,7 @@ int mdss_fb_atomic_commit(struct fb_info *info,
 	}
 
 #ifdef CONFIG_DYNAMIC_STUNE
-	dynstune_acquire_update();
+	dynstune_acquire_update(CORE);
 #endif
 
 	commit_v1 = &commit->commit_v1;
