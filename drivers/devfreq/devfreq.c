@@ -27,6 +27,10 @@
 #include <linux/hrtimer.h>
 #include "governor.h"
 
+#ifdef CONFIG_DYNAMIC_STUNE
+#include <linux/dynamic_stune.h>
+#endif
+
 static struct class *devfreq_class;
 
 /*
@@ -220,6 +224,12 @@ int update_devfreq(struct devfreq *devfreq)
 	err = devfreq->profile->target(devfreq->dev.parent, &freq, flags);
 	if (err)
 		return err;
+
+#ifdef CONFIG_DYNAMIC_STUNE
+	/* Do not drop perf if GPU is running at its max_freq so extend timer. */
+	if (freq == devfreq->max_freq && freq == devfreq->previous_freq)
+		dynstune_acquire_update(INPUT);
+#endif
 
 	if (devfreq->profile->freq_table)
 		if (devfreq_update_status(devfreq, freq))

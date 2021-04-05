@@ -15,7 +15,7 @@ enum {
 };
 
 struct dynstune dss = {
-	.update = ATOMIC_INIT(0), 
+	.update = { ATOMIC_INIT(0) }, 
 	.state = { ATOMIC_INIT(0) }
 };
 
@@ -42,14 +42,14 @@ static bool dynstune_cmpxchg_state(struct dynstune_priv *dsp, int req_curr)
 
 	/* Change atomics if curr state matches requirement */
 	if (state[CURR] == req_curr) {
-		state[NEW] = atomic_read(&ds->update);
+		state[NEW] = atomic_read(&ds->update[CORE]);
 
 		ret = (state[NEW] != state[CURR]);
 		if (ret)
 			atomic_set(&ds->state[CORE], state[NEW]);
 
 		if (state[NEW]) {
-			atomic_set_release(&ds->update, 0);
+			atomic_set_release(&ds->update[CORE], 0);
 			mod_timer_pinned(&dsp->timer[CORE], jiffies + dsp->duration[CORE]);
 		}
 	}
@@ -103,17 +103,6 @@ static int dynstune_thread(void *data)
 	return 0;
 }
 
-void dynstune_extend_timer(struct dynstune *ds)
-{
-	struct dynstune_priv *dsp = ds->priv_data;
-
-	if (!dsp)
-		return;
-
-	if (!mod_timer(&dsp->timer[INPUT], jiffies + dsp->duration[INPUT]))
-		atomic_set(&ds->state[INPUT], 1);
-}
-
 static void core_timeout(unsigned long data)
 {
 	struct dynstune_priv *dsp = (struct dynstune_priv *)data;
@@ -124,8 +113,15 @@ static void core_timeout(unsigned long data)
 
 static void input_timeout(unsigned long data)
 {
-	struct dynstune *ds = (struct dynstune *)data;
-	atomic_set(&ds->state[INPUT], 0);
+	struct dynstune_priv *dsp = (struct dynstune_priv *)data;
+	struct dynstune *ds = dsp->ds;
+
+	if (!atomic_read(&ds->update[INPUT])) {
+		atomic_set(&ds->state[INPUT], 0);
+	} else {
+		mod_timer(&dsp->timer[INPUT], jiffies + dsp->duration[INPUT]);
+		atomic_set_release(&ds->update[INPUT], 0);
+	}
 }
 
 static void dynstune_input(struct input_handle *handle,
@@ -134,10 +130,11 @@ static void dynstune_input(struct input_handle *handle,
 	struct dynstune_priv *dsp = handle->handler->private;
 	struct dynstune *ds = dsp->ds;
 
-	if (!mod_timer(&dsp->timer[INPUT], jiffies + dsp->duration[INPUT]))
+	if (!atomic_read(&ds->update[INPUT]) && !mod_timer(&dsp->timer[INPUT], 
+			jiffies + dsp->duration[INPUT]))
 		atomic_set(&ds->state[INPUT], 1);
 
-	if (!atomic_read(&ds->state[CORE]) && atomic_read(&ds->update))
+	if (!atomic_read(&ds->state[CORE]) && atomic_read(&ds->update[CORE]))
 		wake_up_dynstune(dsp);
 }
 
@@ -227,7 +224,7 @@ static int __init dynamic_stune_init(void)
 	ds_priv->duration[INPUT] = msecs_to_jiffies(CONFIG_DYNSTUNE_INPUT_TIME_FRAME);
 
 	setup_timer(&ds_priv->timer[CORE], core_timeout, (unsigned long)ds_priv);
-	setup_timer(&ds_priv->timer[INPUT], input_timeout, (unsigned long)ds_priv->ds);
+	setup_timer(&ds_priv->timer[INPUT], input_timeout, (unsigned long)ds_priv);
 
 	ds_priv->thread = kthread_run_perf_critical(dynstune_thread, ds_priv, "dynstune_d");
 	if (IS_ERR(ds_priv->thread)) {
@@ -240,8 +237,6 @@ static int __init dynamic_stune_init(void)
 	ret = input_register_handler(&dynstune_input_handler);
 	if (ret)
 		goto err;
-
-	dss.priv_data = ds_priv;
 
 	return 0;
 
