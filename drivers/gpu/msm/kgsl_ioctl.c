@@ -179,7 +179,7 @@ long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 
 #ifdef CONFIG_DYNAMIC_STUNE
 	if (cmd == IOCTL_KGSL_GPU_COMMAND)
-		dynstune_acquire_update();
+		dynstune_acquire_update(CORE);
 #endif
 
 	ret = kgsl_ioctl_helper(filep, cmd, arg, kgsl_ioctl_funcs,
