@@ -5,6 +5,8 @@
 #include <linux/delay.h>
 #include <linux/slab.h>
 
+#include <linux/qpnp/qpnp-haptic.h>
+
 #define DRIVER_AUTHOR "flar2 (asegaert at gmail.com)"
 #define DRIVER_DESCRIPTION "sweep2sleep driver"
 #define DRIVER_VERSION "4.0"
@@ -33,7 +35,6 @@ static struct input_dev * sweep2sleep_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 static struct workqueue_struct *s2s_input_wq;
 static struct work_struct s2s_input_work;
-extern void set_vibrate(int value); 
 static int vib_strength = VIB_STRENGTH;
 
 /* PowerKey work func */

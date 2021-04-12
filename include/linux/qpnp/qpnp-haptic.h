@@ -15,10 +15,12 @@
 /* interface for the other module to play different sequences */
 #ifdef CONFIG_QPNP_HAPTIC
 int qpnp_hap_play_byte(u8 data, bool on);
+void set_vibrate(int value); 
 #else
 static inline int qpnp_hap_play_byte(u8 data, bool on)
 {
 	return 0;
 }
+static inline void set_vibrate(int value) {}
 #endif
 #endif
