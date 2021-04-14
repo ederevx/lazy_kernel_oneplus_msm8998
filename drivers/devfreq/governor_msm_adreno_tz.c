@@ -24,6 +24,10 @@
 #include <soc/qcom/scm.h>
 #include "governor.h"
 
+#ifdef CONFIG_ADAPTIVE_TUNE
+#include <linux/adaptive_tune.h>
+#endif
+
 static DEFINE_SPINLOCK(tz_lock);
 static DEFINE_SPINLOCK(sample_lock);
 static DEFINE_SPINLOCK(suspend_lock);
@@ -416,11 +420,12 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	}
 
 	*freq = devfreq->profile->freq_table[level];
-#ifdef CONFIG_DYNAMIC_STUNE
-	/* Do not drop perf if GPU was and is running at a freq higher than min freq. */
+#ifdef CONFIG_ADAPTIVE_TUNE
+	/* Directly update adaptune if GPU is running at a higher frequency than min */
 	if (*freq > devfreq->min_freq && devfreq->previous_freq > devfreq->min_freq)
-		dynstune_acquire_update(INPUT);
+		adaptune_update(&atx);
 #endif
+
 	return 0;
 }
 
