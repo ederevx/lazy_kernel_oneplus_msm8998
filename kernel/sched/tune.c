@@ -11,8 +11,8 @@
 #include "sched.h"
 #include "tune.h"
 
-#ifdef CONFIG_DYNAMIC_STUNE
-#include <linux/dynamic_stune.h>
+#ifdef CONFIG_ADAPTIVE_TUNE
+#include <linux/adaptive_tune.h>
 #endif
 
 #ifdef CONFIG_CGROUP_SCHEDTUNE
@@ -128,9 +128,9 @@ struct schedtune {
 	/* Bias high performance cpus for the tasks on that SchedTune CGroup */
 	int boost_bias;
 
-#ifdef CONFIG_DYNAMIC_STUNE
+#ifdef CONFIG_ADAPTIVE_TUNE
 	/* Boost value for dynamic stune structure to use */
-	int dynamic_boost;
+	int adaptive_boost;
 #endif
 
 	/* Performance Boost (B) region threshold params */
@@ -623,8 +623,8 @@ boost_bias_write(struct cgroup_subsys_state *css, struct cftype *cft,
 {
 	struct schedtune *st = css_st(css);
 
-#ifdef CONFIG_DYNAMIC_STUNE
-	if (st->dynamic_boost)
+#ifdef CONFIG_ADAPTIVE_TUNE
+	if (st->adaptive_boost)
 		return 0;
 #endif
 
@@ -695,14 +695,14 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 	return 0;
 }
 
-#ifdef CONFIG_DYNAMIC_STUNE
-static void dynamic_schedtune_write(struct schedtune *st, bool state)
+#ifdef CONFIG_ADAPTIVE_TUNE
+static void adaptive_schedtune_write(struct schedtune *st, bool state)
 {
-	if (!st->dynamic_boost)
+	if (!st->adaptive_boost)
 		return;
 
-	if (st->dynamic_boost > 1) {
-		u64 boost = state ? st->dynamic_boost : 0;
+	if (st->adaptive_boost > 1) {
+		u64 boost = state ? st->adaptive_boost : 0;
 		boost_write(&st->css, NULL, boost);
 	} else {
 		st->boost_bias = state;
@@ -712,31 +712,31 @@ static void dynamic_schedtune_write(struct schedtune *st, bool state)
 }
 
 static u64
-dynamic_boost_read(struct cgroup_subsys_state *css, struct cftype *cft)
+adaptive_boost_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct schedtune *st = css_st(css);
 
-	return st->dynamic_boost;
+	return st->adaptive_boost;
 }
 
 static int
-dynamic_boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
-	    u64 dynamic_boost)
+adaptive_boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
+	    u64 adaptive_boost)
 {
 	struct schedtune *st = css_st(css);
 
-	if (dynamic_boost > 100)
+	if (adaptive_boost > 100)
 		return -EINVAL;
 
 	/* Disable old values and set new ones */
-	dynamic_schedtune_write(st, false);
-	st->dynamic_boost = dynamic_boost;
-	dynamic_schedtune_write(st, dynstune_read_state(CORE));
+	adaptive_schedtune_write(st, false);
+	st->adaptive_boost = adaptive_boost;
+	adaptive_schedtune_write(st, adaptune_read_state(CORE));
 
 	return 0;
 }
 
-void dynamic_schedtune_set(bool state)
+void adaptive_schedtune_set(bool state)
 {
 	int idx;
 
@@ -746,7 +746,7 @@ void dynamic_schedtune_set(bool state)
 		if (!st)
 			break;
 
-		dynamic_schedtune_write(st, state);
+		adaptive_schedtune_write(st, state);
 	}
 }
 #endif
@@ -757,8 +757,8 @@ static int boost_write_wrapper(struct cgroup_subsys_state *css,
 	if (task_is_booster(current))
 		return 0;
 
-#ifdef CONFIG_DYNAMIC_STUNE
-	if (css_st(css)->dynamic_boost)
+#ifdef CONFIG_ADAPTIVE_TUNE
+	if (css_st(css)->adaptive_boost)
 		return 0;
 #endif
 
@@ -771,8 +771,8 @@ static int prefer_idle_write_wrapper(struct cgroup_subsys_state *css,
 	if (task_is_booster(current))
 		return 0;
 
-#ifdef CONFIG_DYNAMIC_STUNE
-	if (css_st(css)->dynamic_boost)
+#ifdef CONFIG_ADAPTIVE_TUNE
+	if (css_st(css)->adaptive_boost)
 		return 0;
 #endif
 
@@ -790,11 +790,11 @@ static struct cftype files[] = {
 		.read_u64 = boost_bias_read,
 		.write_u64 = boost_bias_write,
 	},
-#ifdef CONFIG_DYNAMIC_STUNE
+#ifdef CONFIG_ADAPTIVE_TUNE
 	{
-		.name = "dynamic_boost",
-		.read_u64 = dynamic_boost_read,
-		.write_u64 = dynamic_boost_write,
+		.name = "adaptive_boost",
+		.read_u64 = adaptive_boost_read,
+		.write_u64 = adaptive_boost_write,
 	},
 #endif
 	{
@@ -837,7 +837,7 @@ static void write_default_values(struct cgroup_subsys_state *css)
 	static struct st_data st_targets[] = {
 		{ "audio-app",	0, 0, 0 },
 		{ "background",	0, 0, 0 },
-		{ "foreground",	0, 0, 0 },
+		{ "foreground",	1, 0, 0 },
 		{ "rt",		0, 0, 0 },
 		{ "top-app",	1, 0, 0 },
 	};
@@ -850,9 +850,9 @@ static void write_default_values(struct cgroup_subsys_state *css)
 			pr_info("stune_assist: setting values for %s: boost=%d boost_bias=%d prefer_idle=%d\n", 
 				tgt.name, tgt.boost, tgt.boost_bias, tgt.prefer_idle);
 
-#ifdef CONFIG_DYNAMIC_STUNE
+#ifdef CONFIG_ADAPTIVE_TUNE
 			if (tgt.boost) {
-				int ret = dynamic_boost_write(css, NULL, tgt.boost);
+				int ret = adaptive_boost_write(css, NULL, tgt.boost);
 				/* Skip other values if successful */
 				if (!ret)
 					continue;
