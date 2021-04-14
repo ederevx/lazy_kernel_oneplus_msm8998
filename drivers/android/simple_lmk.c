@@ -12,6 +12,10 @@
 #include <linux/sort.h>
 #include <linux/vmpressure.h>
 
+#ifdef CONFIG_ADAPTIVE_TUNE
+#include <linux/adaptive_tune.h>
+#endif
+
 /* The minimum number of pages to free per reclaim */
 #define MIN_FREE_PAGES (CONFIG_ANDROID_SIMPLE_LMK_MINFREE * SZ_1M / PAGE_SIZE)
 
@@ -213,6 +217,11 @@ static void scan_and_kill(unsigned long pages_needed)
 		pr_info("Killing %s with adj %d to free %lu KiB\n", vtsk->comm,
 			vtsk->signal->oom_score_adj,
 			victim->size << (PAGE_SHIFT - 10));
+
+#ifdef CONFIG_ADAPTIVE_TUNE
+		/* Mitigate the increase in system latency due to task killing */
+		adaptune_update(&atx);
+#endif
 
 		/* Accelerate the victim's death by forcing the kill signal */
 		do_send_sig_info(SIGKILL, SEND_SIG_FORCED, vtsk, true);

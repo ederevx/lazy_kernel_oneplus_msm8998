@@ -49,8 +49,8 @@
 #include <sync.h>
 #include <sw_sync.h>
 
-#ifdef CONFIG_DYNAMIC_STUNE
-#include <linux/dynamic_stune.h>
+#ifdef CONFIG_ADAPTIVE_TUNE
+#include <linux/adaptive_tune.h>
 #endif
 
 #include "mdss_fb.h"
@@ -3786,8 +3786,8 @@ int mdss_fb_atomic_commit(struct fb_info *info,
 		goto end;
 	}
 
-#ifdef CONFIG_DYNAMIC_STUNE
-	dynstune_acquire_update(CORE);
+#ifdef CONFIG_ADAPTIVE_TUNE
+	adaptune_acquire_update(CORE);
 #endif
 
 	commit_v1 = &commit->commit_v1;
