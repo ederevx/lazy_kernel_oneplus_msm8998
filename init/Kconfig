@@ -1373,31 +1373,36 @@ config SCHED_TUNE
 
 	  If unsure, say N.
 
-config DYNAMIC_STUNE
-	bool "Dynamic schedtune configuration"
+config ADAPTIVE_TUNE
+	bool "Adaptive tune configuration"
 	depends on SCHED_TUNE && CGROUP_SCHEDTUNE
 	default y
 	help
-	  This option enables a simple driver that enables/disables schedtune
-	  parameters during runtime.
+	  This option enables a driver that enables/disables schedtune
+	  parameters, PM QoS, and other extensive integrations in which their
+	  activation depends on the system's load monitored through integrations
+	  throughout kernel drivers that are involved with interactions with the
+	  system and the user such as the framebuffer and the GPU.
 
 	  If unsure, say N.
 
-if DYNAMIC_STUNE
+if ADAPTIVE_TUNE
 
-config DYNSTUNE_CORE_DURATION
-	int "Dynamic schedtune core duration in milliseconds"
+config ADAPTUNE_CORE_DURATION
+	int "Adaptive tune core duration in milliseconds"
 	default 250
 	range 10 10000
 	help
-	  Determines how long active schedtune values are applied.
+	  Determines how long adaptune's performance parameters are applied. Can be
+	  extended by framebuffer activity, zygote top-app processes, and such.
 
-config DYNSTUNE_INPUT_TIME_FRAME
-	int "Dynamic schedtune time frame after input in milliseconds"
+config ADAPTUNE_INPUT_TIME_FRAME
+	int "Adaptive tune time frame after input in milliseconds"
 	default 5000
 	range 10 10000
 	help
-	  Determines how long dynamic schedtune can remain active after an input.
+	  Determines how long adaptive tune can remain active after an input. Can
+	  be extended by GPU usage and frequency.
 
 endif
 
