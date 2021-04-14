@@ -24,8 +24,8 @@
 #include <soc/qcom/scm.h>
 #include "governor.h"
 
-#ifdef CONFIG_DYNAMIC_STUNE
-#include <linux/dynamic_stune.h>
+#ifdef CONFIG_ADAPTIVE_TUNE
+#include <linux/adaptive_tune.h>
 #endif
 
 static DEFINE_SPINLOCK(tz_lock);
@@ -395,8 +395,8 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	priv->bin.busy_time += stats.busy_time;
 
 	/* scale busy time up based on adrenoboost parameter, only if MIN_BUSY exceeded */
-#ifdef CONFIG_DYNAMIC_STUNE
-	if (adrenoboost > 0 && dynstune_read_state(CORE)) {
+#ifdef CONFIG_ADAPTIVE_TUNE
+	if (adrenoboost > 0 && adaptune_read_state(CORE)) {
 #else
 	if (adrenoboost > 0) {
 #endif
@@ -457,11 +457,18 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 	}
 
 	*freq = devfreq->profile->freq_table[level];
-#ifdef CONFIG_DYNAMIC_STUNE
-	/* Do not drop perf if GPU was and is running at a freq higher than min freq. */
-	if (*freq > devfreq->min_freq && devfreq->previous_freq > devfreq->min_freq)
-		dynstune_acquire_update(INPUT);
+#ifdef CONFIG_ADAPTIVE_TUNE
+	/* 
+	 * Directly update adaptune if we are going to run GPU at max freq, else
+	 * check if GPU is running at a higher frequency than min in which we just accquire
+	 * an input update.
+	 */
+	if (*freq >= devfreq->max_freq)
+		adaptune_update(&atx);
+	else if (*freq > devfreq->min_freq && devfreq->previous_freq > devfreq->min_freq)
+		adaptune_acquire_update(INPUT);
 #endif
+
 	return 0;
 }
 

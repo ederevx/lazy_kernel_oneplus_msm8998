@@ -19,8 +19,8 @@
 #include "kgsl_sync.h"
 #include "adreno.h"
 
-#ifdef CONFIG_DYNAMIC_STUNE
-#include <linux/dynamic_stune.h>
+#ifdef CONFIG_ADAPTIVE_TUNE
+#include <linux/adaptive_tune.h>
 #endif
 
 static const struct kgsl_ioctl kgsl_ioctl_funcs[] = {
@@ -177,9 +177,9 @@ long kgsl_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 	    READ_ONCE(device->state) != KGSL_STATE_ACTIVE)
 		kgsl_schedule_work(KGSL_PERF, &adreno_dev->pwr_on_work);
 
-#ifdef CONFIG_DYNAMIC_STUNE
+#ifdef CONFIG_ADAPTIVE_TUNE
 	if (cmd == IOCTL_KGSL_GPU_COMMAND)
-		dynstune_acquire_update(CORE);
+		adaptune_acquire_update(CORE);
 #endif
 
 	ret = kgsl_ioctl_helper(filep, cmd, arg, kgsl_ioctl_funcs,
