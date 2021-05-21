@@ -1226,17 +1226,6 @@ static int cpufreq_init_policy(struct cpufreq_policy *policy)
 					       NULL);
 	}
 
-#ifdef CONFIG_CPU_FREQ_DEFAULT_LIMITS
-	/* Default min and max freq limits */
-	if (cpumask_test_cpu(policy->cpu, cpu_lp_mask)) {
-		new_policy.min = policy->user_policy.min = CONFIG_LP_CPU_MIN_FREQ;
-		new_policy.max = policy->user_policy.max = CONFIG_LP_CPU_MAX_FREQ;
-	} else {
-		new_policy.min = policy->user_policy.min = CONFIG_PERF_CPU_MIN_FREQ;
-		new_policy.max = policy->user_policy.max = CONFIG_PERF_CPU_MAX_FREQ;
-	}
-#endif
-
 	/* set default policy */
 	return cpufreq_set_policy(policy, &new_policy);
 }
@@ -1433,6 +1422,17 @@ static int cpufreq_online(unsigned int cpu)
 	 * managing offline cpus here.
 	 */
 	cpumask_and(policy->cpus, policy->cpus, cpu_online_mask);
+
+#ifdef CONFIG_CPU_FREQ_DEFAULT_LIMITS
+	/* Set default min and max freq limits */
+	if (cpumask_test_cpu(policy->cpu, cpu_lp_mask)) {
+		policy->min = policy->user_policy.min = CONFIG_LP_CPU_MIN_FREQ;
+		policy->max = policy->user_policy.max = CONFIG_LP_CPU_MAX_FREQ;
+	} else {
+		policy->min = policy->user_policy.min = CONFIG_PERF_CPU_MIN_FREQ;
+		policy->max = policy->user_policy.max = CONFIG_PERF_CPU_MAX_FREQ;
+	}
+#endif
 
 	if (new_policy) {
 		policy->user_policy.min = policy->min;
