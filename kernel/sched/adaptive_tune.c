@@ -59,7 +59,7 @@ static void adaptune_core(struct adaptune_priv *atp, int wanted_state)
 	if (!adaptune_update_state(CORE, atp, wanted_state, &new_state))
 		return;
 
-	diff = (state[CURR] != new_state);
+	diff = (READ_ONCE(state[CURR]) != new_state);
 	if (diff) {
 		WRITE_ONCE(state[NEW], new_state);
 		wake_up_process(atp->thread);
@@ -95,7 +95,7 @@ static int adaptune_thread(void *data)
 	sched_setscheduler_nocheck(current, SCHED_FIFO, &sched_max_rt_prio);
 
 	while (1) {
-		while (state[CURR] == state[NEW]) {
+		while (state[CURR] == READ_ONCE(state[NEW])) {
 			set_current_state(TASK_IDLE);
 			schedule();
 		}
@@ -210,7 +210,7 @@ static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
 		return NOTIFY_OK;
 
 	state = (*blank == FB_BLANK_UNBLANK);
-	if (state == atp->state[SUSPEND]) {
+	if (state == READ_ONCE(atp->state[SUSPEND])) {
 		WRITE_ONCE(atp->state[SUSPEND], !state);
 
 		if (state) {
