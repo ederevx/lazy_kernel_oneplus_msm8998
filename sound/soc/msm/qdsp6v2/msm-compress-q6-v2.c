@@ -1283,6 +1283,7 @@ static int msm_compr_init_pp_params(struct snd_compr_stream *cstream,
 
 	switch (ac->topology) {
 	case ASM_STREAM_POSTPROC_TOPO_ID_HPX_PLUS: /* HPX + SA+ topology */
+	default:
 
 		ret = q6asm_set_softvolume_v2(ac, &softvol,
 					      SOFT_VOLUME_INSTANCE_1);
@@ -1297,17 +1298,12 @@ static int msm_compr_init_pp_params(struct snd_compr_stream *cstream,
 			__func__, ret);
 		/*
 		 * HPX module init is trigerred from HAL using ioctl
-		 * DTS_EAGLE_MODULE_ENABLE when stream starts
+		 * DTS_EAGLE_MODULE_ENABLE when stream starts. However,
+		 * as CAF no longer uses DTS in newer tags, let's force enable
+		 * it here.
 		 */
-		break;
-	case ASM_STREAM_POSTPROC_TOPO_ID_DTS_HPX: /* HPX topology */
-		break;
-	default:
-		ret = q6asm_set_softvolume_v2(ac, &softvol,
-					      SOFT_VOLUME_INSTANCE_1);
-		if (ret < 0)
-			pr_err("%s: Send SoftVolume Param failed ret=%d\n",
-			__func__, ret);
+		msm_dts_eagle_enable_asm(ac, true,
+			AUDPROC_MODULE_ID_DTS_HPX_PREMIX);
 
 		break;
 	}
@@ -3361,15 +3357,15 @@ static int msm_compr_audio_effects_config_put(struct snd_kcontrol *kcontrol,
 
 		break;
 	case SOFT_VOLUME_MODULE:
-		pr_debug("%s: SOFT_VOLUME_MODULE\n", __func__);
-		break;
 	case SOFT_VOLUME2_MODULE:
-		pr_debug("%s: SOFT_VOLUME2_MODULE\n", __func__);
-		if (msm_audio_effects_is_effmodule_supp_in_top(effects_module,
-						prtd->audio_client->topology))
-			msm_audio_effects_volume_handler_v2(prtd->audio_client,
-						&(audio_effects->volume),
-						values, SOFT_VOLUME_INSTANCE_2);
+		pr_debug("%s: SOFT_VOLUME_MODULES\n", __func__);
+		msm_audio_effects_volume_handler_v2(prtd->audio_client,
+					&(audio_effects->volume),
+					values, SOFT_VOLUME_INSTANCE_1);
+
+		msm_audio_effects_volume_handler_v2(prtd->audio_client,
+					&(audio_effects->volume),
+					values, SOFT_VOLUME_INSTANCE_2);
 		break;
 	default:
 		pr_err("%s Invalid effects config module\n", __func__);
