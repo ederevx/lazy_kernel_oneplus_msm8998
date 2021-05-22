@@ -660,7 +660,7 @@ struct adm_cmd_set_pp_params {
 #define ADM_CMD_GET_MTMX_STRTR_DEV_PARAMS_V1	0x00010368
 #define ADM_CMDRSP_GET_MTMX_STRTR_DEV_PARAMS_V1	0x00010369
 
-/* Payload of the #define ADM_CMD_SET_MTMX_STRTR_DEV_PARAMS_V1 command.
+/* Payload of the #defineï¿½ADM_CMD_SET_MTMX_STRTR_DEV_PARAMS_V1 command.
  * If the data_payload_addr_lsw and data_payload_addr_msw element
  * are NULL, a series of struct param_hdr_v3 structures immediately
  * follows, whose total size is payload_size bytes.
@@ -7339,6 +7339,23 @@ struct asm_stream_cmd_set_pp_params {
 #define ASM_STREAM_CMD_GET_PP_PARAMS_V2		0x00010DA2
 #define ASM_STREAM_CMD_GET_PP_PARAMS_V3 0x0001320E
 
+struct asm_stream_cmd_get_pp_params {
+	/* APR Header */
+	struct apr_hdr apr_hdr;
+
+	/* The memory mapping header to be used when sending out of band */
+	struct mem_mapping_hdr mem_hdr;
+
+	/* The total size of the payload, including the parameter header */
+	u32 payload_size;
+
+	/* The parameter data to be filled when sent inband. Parameter data
+	 * must be pre-packed with parameter header and then copied here. Use
+	 * q6core_pack_pp_params to pack the header and param data correctly.
+	 */
+	u32 param_data[0];
+} __packed;
+
 struct asm_stream_cmd_get_pp_params_v2 {
 	u32                  data_payload_addr_lsw;
 	/* LSW of the parameter data payload address. */
@@ -10659,7 +10676,7 @@ struct afe_clk_set {
 	 * for enable and disable clock.
 	 *	"clk_freq_in_hz", "clk_attri", and "clk_root"
 	 *	are ignored in disable clock case.
-	 *	@values 
+	 *	@valuesï¿½
 	 *	- 0 -- Disabled
 	 *	- 1 -- Enabled  @tablebulletend
 	 */
