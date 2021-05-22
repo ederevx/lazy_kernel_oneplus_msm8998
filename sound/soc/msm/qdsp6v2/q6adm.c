@@ -3181,8 +3181,8 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 			}
 		}
 
-		if ((topology == ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX) &&
-		    (perf_mode == LEGACY_PCM_MODE)) {
+		/* Have DTS be force allocated always as param outband for legacy PCM playback */
+		if ((path == ADM_PATH_PLAYBACK) && (perf_mode == LEGACY_PCM_MODE)) {
 			int res = 0;
 			atomic_set(&this_adm.mem_map_index, ADM_DTS_EAGLE);
 			msm_dts_ion_memmap(&this_adm.outband_memmap);
