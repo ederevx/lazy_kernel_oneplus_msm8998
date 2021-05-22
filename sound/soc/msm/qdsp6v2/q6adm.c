@@ -329,20 +329,20 @@ done:
 int adm_dts_eagle_set(int port_id, int copp_idx, int param_id,
 		      void *data, uint32_t size)
 {
-	struct adm_cmd_set_pp_params_v5	admp;
-	int p_idx, ret = 0, *ob_params;
+	struct param_hdr_v3 param_hdr = { 0 };
+	u8 *update_params_ptr = (u8 *) this_adm.outband_memmap.kvaddr;
+	u32 total_param_size = 0;
+	int port_idx;
+	int ret = 0;
 
-	pr_debug("DTS_EAGLE_ADM: %s - port id %i, copp idx %i, param id 0x%X size %u\n",
-		__func__, port_id, copp_idx, param_id, size);
+	pr_debug("DTS_EAGLE_ADM: %s - port id %i, copp idx %i, param id 0x%X\n",
+		 __func__, port_id, copp_idx, param_id);
 
 	port_id = afe_convert_virtual_to_portid(port_id);
-	p_idx = adm_validate_and_get_port_index(port_id);
-	pr_debug("DTS_EAGLE_ADM: %s - after lookup, port id %i, port idx %i\n",
-		__func__, port_id, p_idx);
-
-	if (p_idx < 0) {
-		pr_err("DTS_EAGLE_ADM: %s: invalid port index 0x%x, port id 0x%x\n",
-			__func__, p_idx, port_id);
+	port_idx = adm_validate_and_get_port_index(port_id);
+	if (port_idx < 0) {
+		pr_err("DTS_EAGLE_ADM: %s - invalid port index %i, port id %i, copp idx %i\n",
+				__func__, port_idx, port_id, copp_idx);
 		return -EINVAL;
 	}
 
@@ -352,16 +352,17 @@ int adm_dts_eagle_set(int port_id, int copp_idx, int param_id,
 		return -EINVAL;
 	}
 
-	ob_params = (int *)this_adm.outband_memmap.kvaddr;
-	if (ob_params == NULL) {
-		pr_err("DTS_EAGLE_ADM: %s - NULL memmap. Non Eagle topology selected?\n",
+	if (update_params_ptr == NULL) {
+		pr_err("DTS_EAGLE_ADM: %s - NULL memmap. Non Eagle topology selected?",
 			__func__);
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
+
 	/* check for integer overflow */
 	if (size > (UINT_MAX - APR_CMD_OB_HDR_SZ))
 		ret = -EINVAL;
+
 	if ((ret < 0) ||
 	    (size + APR_CMD_OB_HDR_SZ > this_adm.outband_memmap.size)) {
 		pr_err("DTS_EAGLE_ADM - %s: ion alloc of size %zu too small for size requested %u\n",
@@ -370,61 +371,41 @@ int adm_dts_eagle_set(int port_id, int copp_idx, int param_id,
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
-	*ob_params++ = AUDPROC_MODULE_ID_DTS_HPX_POSTMIX;
-	*ob_params++ = param_id;
-	*ob_params++ = size;
-	memcpy(ob_params, data, size);
 
-	admp.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
-		APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
-	admp.hdr.pkt_size = sizeof(admp);
-	admp.hdr.src_svc = APR_SVC_ADM;
-	admp.hdr.src_domain = APR_DOMAIN_APPS;
-	admp.hdr.src_port = port_id;
-	admp.hdr.dest_svc = APR_SVC_ADM;
-	admp.hdr.dest_domain = APR_DOMAIN_ADSP;
-	admp.hdr.dest_port = atomic_read(&this_adm.copp.id[p_idx][copp_idx]);
-	admp.hdr.token = p_idx << 16 | copp_idx;
-	admp.hdr.opcode = ADM_CMD_SET_PP_PARAMS_V5;
-	admp.payload_addr_lsw = lower_32_bits(this_adm.outband_memmap.paddr);
-	admp.payload_addr_msw = msm_audio_populate_upper_32_bits(
-						this_adm.outband_memmap.paddr);
-	admp.mem_map_handle = atomic_read(&this_adm.mem_map_handles[
-					  ADM_DTS_EAGLE]);
-	admp.payload_size = size + sizeof(struct adm_param_data_v5);
+	param_hdr.module_id = AUDPROC_MODULE_ID_DTS_HPX_POSTMIX;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = param_id;
+	param_hdr.param_size = size;
 
-	pr_debug("DTS_EAGLE_ADM: %s - Command was sent now check Q6 - port id = %d, size %d, module id %x, param id %x.\n",
-			__func__, admp.hdr.dest_port,
-			admp.payload_size, AUDPROC_MODULE_ID_DTS_HPX_POSTMIX,
-			param_id);
-	atomic_set(&this_adm.copp.stat[p_idx][copp_idx], -1);
-	ret = apr_send_pkt(this_adm.apr, (uint32_t *)&admp);
-	if (ret < 0) {
-		pr_err("DTS_EAGLE_ADM: %s - ADM enable for port %d failed\n",
-			__func__, port_id);
-		ret = -EINVAL;
+	ret = q6common_pack_pp_params(update_params_ptr, &param_hdr,
+						data, &total_param_size);
+	if (ret) {
+		pr_err("%s: Failed to pack param header and data, error %d\n",
+				__func__, ret);
 		goto fail_cmd;
 	}
-	ret = wait_event_timeout(this_adm.copp.wait[p_idx][copp_idx],
-			atomic_read(&this_adm.copp.stat
-			[p_idx][copp_idx]) >= 0,
-			msecs_to_jiffies(TIMEOUT_MS));
-	if (!ret) {
-		pr_err("DTS_EAGLE_ADM: %s - set params timed out port = %d\n",
-			__func__, port_id);
-		ret = -EINVAL;
-	} else if (atomic_read(&this_adm.copp.stat
-				[p_idx][copp_idx]) > 0) {
-		pr_err("%s: DSP returned error[%s]\n",
-				__func__, adsp_err_get_err_str(
-				atomic_read(&this_adm.copp.stat
-				[p_idx][copp_idx])));
-		ret = adsp_err_get_lnx_err_code(
-				atomic_read(&this_adm.copp.stat
-				[p_idx][copp_idx]));
+
+	if (this_adm.outband_memmap.paddr) {
+		struct mem_mapping_hdr mem_hdr = { 0 };
+
+		mem_hdr.data_payload_addr_lsw =
+			lower_32_bits(this_adm.outband_memmap.paddr);
+		mem_hdr.data_payload_addr_msw =
+			msm_audio_populate_upper_32_bits(
+				this_adm.outband_memmap.paddr);
+		mem_hdr.mem_map_handle = atomic_read(
+			&this_adm.mem_map_handles[ADM_DTS_EAGLE]);
+
+		ret = adm_set_pp_params(port_id, copp_idx, &mem_hdr, NULL,
+					total_param_size);
 	} else {
-		ret = 0;
+		ret = adm_set_pp_params(port_id, copp_idx, NULL, update_params_ptr,
+					total_param_size);
 	}
+
+	if (ret < 0)
+		pr_err("DTS_EAGLE_ADM: %s - ADM set for port %d failed\n", __func__,
+			port_id);
 
 fail_cmd:
 	return ret;
@@ -433,17 +414,19 @@ fail_cmd:
 int adm_dts_eagle_get(int port_id, int copp_idx, int param_id,
 		      void *data, uint32_t size)
 {
-	struct adm_cmd_get_pp_params_v5	admp;
-	int p_idx, ret = 0, *ob_params;
-	uint32_t orig_size = size;
+	struct param_hdr_v3 param_hdr = { 0 };
+	u8 *update_params_ptr = (u8 *) this_adm.outband_memmap.kvaddr;
+	int port_idx;
+	int ret = 0;
+
 	pr_debug("DTS_EAGLE_ADM: %s - port id %i, copp idx %i, param id 0x%X\n",
 		 __func__, port_id, copp_idx, param_id);
 
 	port_id = afe_convert_virtual_to_portid(port_id);
-	p_idx = adm_validate_and_get_port_index(port_id);
-	if (p_idx < 0) {
+	port_idx = adm_validate_and_get_port_index(port_id);
+	if (port_idx < 0) {
 		pr_err("DTS_EAGLE_ADM: %s - invalid port index %i, port id %i, copp idx %i\n",
-				__func__, p_idx, port_id, copp_idx);
+				__func__, port_idx, port_id, copp_idx);
 		return -EINVAL;
 	}
 
@@ -459,18 +442,19 @@ int adm_dts_eagle_get(int port_id, int copp_idx, int param_id,
 		return -EINVAL;
 	}
 
-	size = (size+3) & 0xFFFFFFFC;
-
-	ob_params = (int *)(this_adm.outband_memmap.kvaddr);
-	if (ob_params == NULL) {
+	if (update_params_ptr == NULL) {
 		pr_err("DTS_EAGLE_ADM: %s - NULL memmap. Non Eagle topology selected?",
 			__func__);
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
+
+	size = (size + 3) & 0xFFFFFFFC;
+
 	/* check for integer overflow */
 	if (size > (UINT_MAX - APR_CMD_OB_HDR_SZ))
 		ret = -EINVAL;
+
 	if ((ret < 0) ||
 	    (size + APR_CMD_OB_HDR_SZ > this_adm.outband_memmap.size)) {
 		pr_err("DTS_EAGLE_ADM - %s: ion alloc of size %zu too small for size requested %u\n",
@@ -479,65 +463,32 @@ int adm_dts_eagle_get(int port_id, int copp_idx, int param_id,
 		ret = -EINVAL;
 		goto fail_cmd;
 	}
-	*ob_params++ = AUDPROC_MODULE_ID_DTS_HPX_POSTMIX;
-	*ob_params++ = param_id;
-	*ob_params++ = size;
 
-	admp.hdr.hdr_field = APR_HDR_FIELD(APR_MSG_TYPE_SEQ_CMD,
-			     APR_HDR_LEN(APR_HDR_SIZE), APR_PKT_VER);
-	admp.hdr.pkt_size = sizeof(admp);
-	admp.hdr.src_svc = APR_SVC_ADM;
-	admp.hdr.src_domain = APR_DOMAIN_APPS;
-	admp.hdr.src_port = port_id;
-	admp.hdr.dest_svc = APR_SVC_ADM;
-	admp.hdr.dest_domain = APR_DOMAIN_ADSP;
-	admp.hdr.dest_port = atomic_read(&this_adm.copp.id[p_idx][copp_idx]);
-	admp.hdr.token = p_idx << 16 | copp_idx;
-	admp.hdr.opcode = ADM_CMD_GET_PP_PARAMS_V5;
-	admp.data_payload_addr_lsw =
-				lower_32_bits(this_adm.outband_memmap.paddr);
-	admp.data_payload_addr_msw =
-				msm_audio_populate_upper_32_bits(
-						this_adm.outband_memmap.paddr);
-	admp.mem_map_handle = atomic_read(&this_adm.mem_map_handles[
-					  ADM_DTS_EAGLE]);
-	admp.module_id = AUDPROC_MODULE_ID_DTS_HPX_POSTMIX;
-	admp.param_id = param_id;
-	admp.param_max_size = size + sizeof(struct adm_param_data_v5);
-	admp.reserved = 0;
+	param_hdr.module_id = AUDPROC_MODULE_ID_DTS_HPX_POSTMIX;
+	param_hdr.instance_id = INSTANCE_ID_0;
+	param_hdr.param_id = param_id;
+	param_hdr.param_size = size;
 
-	atomic_set(&this_adm.copp.stat[p_idx][copp_idx], -1);
+	if (this_adm.outband_memmap.paddr) {
+		struct mem_mapping_hdr mem_hdr = { 0 };
 
-	ret = apr_send_pkt(this_adm.apr, (uint32_t *)&admp);
-	if (ret < 0) {
-		pr_err("DTS_EAGLE_ADM: %s - Failed to get EAGLE Params on port %d\n",
-			__func__, port_id);
-		ret = -EINVAL;
-		goto fail_cmd;
-	}
-	ret = wait_event_timeout(this_adm.copp.wait[p_idx][copp_idx],
-			atomic_read(&this_adm.copp.stat
-			[p_idx][copp_idx]) >= 0,
-			msecs_to_jiffies(TIMEOUT_MS));
-	if (!ret) {
-		pr_err("DTS_EAGLE_ADM: %s - EAGLE get params timed out port = %d\n",
-			__func__, port_id);
-		ret = -EINVAL;
-		goto fail_cmd;
-	} else if (atomic_read(&this_adm.copp.stat
-				[p_idx][copp_idx]) > 0) {
-		pr_err("%s: DSP returned error[%s]\n",
-				__func__, adsp_err_get_err_str(
-				atomic_read(&this_adm.copp.stat
-				[p_idx][copp_idx])));
-		ret = adsp_err_get_lnx_err_code(
-				atomic_read(&this_adm.copp.stat
-					[p_idx][copp_idx]));
-		goto fail_cmd;
+		mem_hdr.data_payload_addr_lsw =
+			lower_32_bits(this_adm.outband_memmap.paddr);
+		mem_hdr.data_payload_addr_msw =
+			msm_audio_populate_upper_32_bits(
+				this_adm.outband_memmap.paddr);
+		mem_hdr.mem_map_handle = atomic_read(
+			&this_adm.mem_map_handles[ADM_DTS_EAGLE]);
+
+		ret = adm_get_pp_params(port_id, copp_idx, 0, &mem_hdr, &param_hdr, data);
+	} else {
+		ret = adm_get_pp_params(port_id, copp_idx, 0, NULL, &param_hdr, data);
 	}
 
-	memcpy(data, ob_params, orig_size);
-	ret = 0;
+	if (ret < 0)
+		pr_err("DTS_EAGLE_ADM: %s - ADM get for port %d failed\n", __func__,
+			port_id);
+
 fail_cmd:
 	return ret;
 }
