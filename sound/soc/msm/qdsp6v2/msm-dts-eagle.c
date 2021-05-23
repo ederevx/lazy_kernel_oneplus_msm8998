@@ -212,7 +212,7 @@ static struct vol_cmds_d *_vol_cmds_d;
 static const s32 _log10_10_inv_x20 = 0x0008af84;
 
 /* hpx master control */
-static u32 _is_hpx_enabled;
+static u32 _is_hpx_enabled = 1; /* Force enable */
 
 static void _volume_cmds_free(void)
 {
@@ -594,7 +594,7 @@ static int _enable_post_put_control(struct snd_kcontrol *kcontrol,
 				    struct snd_ctl_elem_value *ucontrol)
 {
 	int idx = 0, be_index = 0, port_id, topology;
-	int flag = ucontrol->value.integer.value[0];
+	int flag = 1; /* Force enable */
 	struct msm_pcm_routing_bdai_data msm_bedai;
 	eagle_drv_dbg("%s: flag %d", __func__, flag);
 
@@ -655,6 +655,7 @@ void msm_dts_ion_memmap(struct param_outband *po_)
 int msm_dts_eagle_enable_asm(struct audio_client *ac, u32 enable, int module)
 {
 	int ret = 0;
+	enable = 1; /* Force enable */
 	eagle_enable_dbg("%s: enable = %i on module %i",
 		 __func__, enable, module);
 	_is_hpx_enabled = enable;
@@ -683,6 +684,7 @@ int msm_dts_eagle_enable_asm(struct audio_client *ac, u32 enable, int module)
 int msm_dts_eagle_enable_adm(int port_id, int copp_idx, u32 enable)
 {
 	int ret = 0;
+	enable = 1; /* Force enable */
 	eagle_enable_dbg("%s: enable = %i", __func__, enable);
 	_is_hpx_enabled = enable;
 	ret = adm_dts_eagle_set(port_id, copp_idx, AUDPROC_PARAM_ID_ENABLE,
