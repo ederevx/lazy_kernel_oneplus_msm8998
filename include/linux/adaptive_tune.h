@@ -12,17 +12,17 @@ enum adaptune_states {
 };
 
 struct adaptune {
-    atomic_t update[N_ATS], state[N_ATS];
+    atomic_t state[N_ATS], update;
     void *priv;
 };
 
 extern struct adaptune atx;
 
 #define adaptune_read_state(_ats) atomic_read(&atx.state[_ats])
-#define adaptune_acquire_update(_ats)                       \
+#define adaptune_acquire_update()                       \
 ({                                                          \
     if (adaptune_read_state(INPUT))                         \
-        atomic_cmpxchg_acquire(&atx.update[_ats], 0, 1);    \
+        atomic_cmpxchg_acquire(&atx.update, 0, 1);    \
 })
 
 void adaptive_schedtune_set(bool state);
