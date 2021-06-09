@@ -18,8 +18,8 @@ enum {
 };
 
 struct adaptune atx = {
-	.update = { ATOMIC_INIT(0) },
-	.state = { ATOMIC_INIT(0) }
+	.state = { ATOMIC_INIT(0) },
+	.update = ATOMIC_INIT(0)
 };
 
 struct adaptune_priv {
@@ -37,12 +37,12 @@ static bool adaptune_update_state(enum adaptune_states ats,
 {
 	struct adaptune *at = atp->at;
 
-	/*
-	 * Always check and release update atomic, enable if demanded by 
-	 * the caller during runtime. Force disable during suspend.
-	 */
-	*new_state = ((*new_state || atomic_cmpxchg_release(&at->update[ats], 
-			1, 0)) && !atp->state[SUSPEND]);
+	/* Force disable during suspend */
+	if (atp->state[SUSPEND])
+		*new_state = 0;
+	/* Update timer if we want the new state to be true */
+	else if (*new_state)
+		mod_timer(&atp->timer[ats], jiffies + atp->duration[ats]);
 
 	/*
 	 * Only change the state value if the current atomic state
@@ -54,34 +54,21 @@ static bool adaptune_update_state(enum adaptune_states ats,
 
 static void adaptune_core(struct adaptune_priv *atp, int wanted_state)
 {
-	int *state = atp->state, new_state = 0, diff;
+	int new_state = atomic_cmpxchg_release(&atp->at->update, 1, 0);
 
-	if (!adaptune_update_state(CORE, atp, wanted_state, &new_state))
-		return;
+	if (adaptune_update_state(CORE, atp, wanted_state, &new_state)) {
+		int *state = atp->state;
 
-	diff = (READ_ONCE(state[CURR]) != new_state);
-	if (diff) {
 		WRITE_ONCE(state[NEW], new_state);
-		wake_up_process(atp->thread);
-	}
 
-	if (new_state)
-		mod_timer(&atp->timer[CORE], jiffies + atp->duration[CORE]);
+		if (new_state != READ_ONCE(state[CURR]))
+			wake_up_process(atp->thread);
+	}
 }
 
 static void adaptune_input(struct adaptune_priv *atp, int wanted_state)
 {
-	int new_state = wanted_state;
-
-	if (wanted_state)
-		mod_timer(&atp->timer[INPUT], jiffies + atp->duration[INPUT]);
-
-	if (!adaptune_update_state(INPUT, atp, wanted_state, &new_state))
-		return;
-
-	/* Timeout at a finer duration when extending */
-	if (!wanted_state && new_state)
-		mod_timer(&atp->timer[INPUT], jiffies + atp->duration[CORE]);
+	adaptune_update_state(INPUT, atp, wanted_state, &wanted_state);
 }
 
 static int adaptune_thread(void *data)
@@ -95,17 +82,20 @@ static int adaptune_thread(void *data)
 	sched_setscheduler_nocheck(current, SCHED_FIFO, &sched_max_rt_prio);
 
 	while (1) {
-		while (state[CURR] == READ_ONCE(state[NEW])) {
+		int new_state;
+
+		while (state[CURR] == (new_state = 
+				READ_ONCE(state[NEW]))) {
 			set_current_state(TASK_IDLE);
 			schedule();
 		}
 
-		pm_qos_update_request(&atp->req, state[NEW] ?
+		pm_qos_update_request(&atp->req, new_state ?
 				100 : PM_QOS_DEFAULT_VALUE);
 
-		pr_debug("adaptune: set stune = %d\n", state[NEW]);
-		adaptive_schedtune_set(state[NEW]);
-		WRITE_ONCE(state[CURR], state[NEW]);
+		pr_debug("adaptune: set stune = %d\n", new_state);
+		adaptive_schedtune_set(new_state);
+		WRITE_ONCE(state[CURR], new_state);
 	}
 
 	return 0;
@@ -123,8 +113,8 @@ static void input_timeout(unsigned long data)
 
 static void adaptune_wake(struct adaptune_priv *atp)
 {
-	adaptune_input(atp, 1);
 	adaptune_core(atp, 1);
+	adaptune_input(atp, 1);
 }
 
 void adaptune_update(struct adaptune *at)
@@ -269,7 +259,7 @@ static int __init adaptive_tune_init(void)
 		goto unregister_fb;
 	}
 
-	/* Register pointer addr after successful init */
+	/* Register shared priv addr after successful init */
 	atx.priv = atp;
 	return 0;
 

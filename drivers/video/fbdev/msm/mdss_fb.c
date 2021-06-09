@@ -3787,7 +3787,7 @@ int mdss_fb_atomic_commit(struct fb_info *info,
 	}
 
 #ifdef CONFIG_ADAPTIVE_TUNE
-	adaptune_acquire_update(CORE);
+	adaptune_acquire_update();
 #endif
 
 	commit_v1 = &commit->commit_v1;
