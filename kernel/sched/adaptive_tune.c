@@ -14,6 +14,7 @@ enum {
 	CURR,
 	NEW,
 	SUSPEND,
+	PENDING,
 	N_STATE
 };
 
@@ -36,39 +37,49 @@ static bool adaptune_update_state(enum adaptune_states ats,
 		struct adaptune_priv *atp, int wanted_state, int *new_state)
 {
 	struct adaptune *at = atp->at;
+	bool ret;
 
 	/* Force disable during suspend */
 	if (atp->state[SUSPEND])
 		*new_state = 0;
 	/* Update timer if we want the new state to be true */
-	else if (*new_state)
+	else if (*new_state && !timer_pending(&atp->timer[ats]))
 		mod_timer(&atp->timer[ats], jiffies + atp->duration[ats]);
 
 	/*
 	 * Only change the state value if the current atomic state
 	 * is opposite to what is wanted.
 	 */
-	return (wanted_state != atomic_cmpxchg(&at->state[ats],
-				!wanted_state, *new_state));
+	ret = (wanted_state != atomic_read(&at->state[ats]));
+	if (*new_state == wanted_state && ret)
+		atomic_set(&at->state[ats], *new_state);
+
+	return ret;
 }
 
 static void adaptune_core(struct adaptune_priv *atp, int wanted_state)
 {
-	int new_state = atomic_cmpxchg_release(&atp->at->update, 1, 0);
+	int new_state = atomic_cmpxchg(&atp->at->update, 1, 0);
 
 	if (adaptune_update_state(CORE, atp, wanted_state, &new_state)) {
-		int *state = atp->state;
-
-		WRITE_ONCE(state[NEW], new_state);
-
-		if (new_state != READ_ONCE(state[CURR]))
+		WRITE_ONCE(atp->state[NEW], new_state);
+		if (new_state != READ_ONCE(atp->state[CURR]))
 			wake_up_process(atp->thread);
 	}
 }
 
 static void adaptune_input(struct adaptune_priv *atp, int wanted_state)
 {
-	adaptune_update_state(INPUT, atp, wanted_state, &wanted_state);
+	int curr_pending = READ_ONCE(atp->state[PENDING]), new_pending = (wanted_state && 
+			timer_pending(&atp->timer[INPUT]));
+
+	if (new_pending != curr_pending)
+		WRITE_ONCE(atp->state[PENDING], new_pending);
+
+	if (!new_pending) {
+		int new_state = (wanted_state || curr_pending);
+		adaptune_update_state(INPUT, atp, wanted_state, &new_state);
+	}
 }
 
 static int adaptune_thread(void *data)
@@ -77,15 +88,14 @@ static int adaptune_thread(void *data)
 		.sched_priority = MAX_RT_PRIO - 1
 	};
 	struct adaptune_priv *atp = data;
-	int *state = atp->state;
 
 	sched_setscheduler_nocheck(current, SCHED_FIFO, &sched_max_rt_prio);
 
 	while (1) {
 		int new_state;
 
-		while (state[CURR] == (new_state = 
-				READ_ONCE(state[NEW]))) {
+		while (atp->state[CURR] == (new_state = 
+				READ_ONCE(atp->state[NEW]))) {
 			set_current_state(TASK_IDLE);
 			schedule();
 		}
@@ -95,7 +105,7 @@ static int adaptune_thread(void *data)
 
 		pr_debug("adaptune: set stune = %d\n", new_state);
 		adaptive_schedtune_set(new_state);
-		WRITE_ONCE(state[CURR], new_state);
+		WRITE_ONCE(atp->state[CURR], new_state);
 	}
 
 	return 0;
@@ -113,8 +123,8 @@ static void input_timeout(unsigned long data)
 
 static void adaptune_wake(struct adaptune_priv *atp)
 {
-	adaptune_core(atp, 1);
 	adaptune_input(atp, 1);
+	adaptune_core(atp, 1);
 }
 
 void adaptune_update(struct adaptune *at)
@@ -203,9 +213,7 @@ static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
 	if (state == READ_ONCE(atp->state[SUSPEND])) {
 		WRITE_ONCE(atp->state[SUSPEND], !state);
 
-		if (state) {
-			adaptune_wake(atp);
-		} else {
+		if (!state) {
 			enum adaptune_states i;
 
 			for (i = 0; i < N_ATS; i++)

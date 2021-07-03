@@ -22,7 +22,7 @@ extern struct adaptune atx;
 #define adaptune_acquire_update()                       \
 ({                                                          \
     if (adaptune_read_state(INPUT))                         \
-        atomic_cmpxchg_acquire(&atx.update, 0, 1);    \
+        atomic_cmpxchg(&atx.update, 0, 1);    \
 })
 
 void adaptive_schedtune_set(bool state);
