@@ -260,7 +260,7 @@ static int __init adaptive_tune_init(void)
 		goto unregister_input;
 	}
 
-	atp->thread = kthread_run_perf_critical(adaptune_thread, atp, "adaptune_d");
+	atp->thread = kthread_run(adaptune_thread, atp, "adaptune_d");
 	if (IS_ERR(atp->thread)) {
 		ret = PTR_ERR(atp->thread);
 		pr_err("Failed to start stune thread, err: %d\n", ret);
