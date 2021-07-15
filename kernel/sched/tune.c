@@ -568,7 +568,9 @@ int schedtune_boost_bias(struct task_struct *p)
 	/* Get boost_bias value */
 	rcu_read_lock();
 	st = task_schedtune(p);
-	boost_bias = st->boost > 0 ? 1 : st->boost_bias;
+	boost_bias = st->boost;
+	if (!boost_bias)
+		boost_bias = st->boost_bias;
 	rcu_read_unlock();
 
 	return boost_bias;
@@ -587,7 +589,9 @@ int schedtune_boost_bias_rcu_locked(struct task_struct *p)
 
 	/* Get boost_bias value */
 	st = task_schedtune(p);
-	boost_bias = st->boost_bias;
+	boost_bias = st->boost;
+	if (!boost_bias)
+		boost_bias = st->boost_bias;
 
 	return boost_bias;
 }
@@ -604,6 +608,13 @@ int schedtune_prefer_idle(struct task_struct *p)
 	rcu_read_lock();
 	st = task_schedtune(p);
 	prefer_idle = st->prefer_idle;
+
+	/* 
+	 * If there's prefer_idle and adaptive boost then override 
+	 * prefer_idle according to adaptune state 
+	 */
+	if (prefer_idle && st->adaptive_boost)
+		prefer_idle *= adaptune_read_state(CORE);
 	rcu_read_unlock();
 
 	return prefer_idle;
@@ -698,17 +709,20 @@ boost_write(struct cgroup_subsys_state *css, struct cftype *cft,
 #ifdef CONFIG_ADAPTIVE_TUNE
 static void adaptive_schedtune_write(struct schedtune *st, bool state)
 {
-	if (!st->adaptive_boost)
+	u64 boost = st->adaptive_boost;
+
+	if (!boost)
 		return;
 
-	if (st->adaptive_boost > 1) {
-		u64 boost = state ? st->adaptive_boost : 0;
-		boost_write(&st->css, NULL, boost);
-	} else {
+	/*
+	 * Trigger write if boost is more than 1, else
+	 * we will only use bias to lessen latency if
+	 * desired.
+	 */
+	if (boost > 1)
+		boost_write(&st->css, NULL, boost * state);
+	else
 		st->boost_bias = state;
-	}
-
-	st->prefer_idle = state;
 }
 
 static u64
@@ -770,11 +784,6 @@ static int prefer_idle_write_wrapper(struct cgroup_subsys_state *css,
 {
 	if (task_is_booster(current))
 		return 0;
-
-#ifdef CONFIG_ADAPTIVE_TUNE
-	if (css_st(css)->adaptive_boost)
-		return 0;
-#endif
 
 	return prefer_idle_write(css, cft, prefer_idle);
 }
@@ -839,7 +848,7 @@ static void write_default_values(struct cgroup_subsys_state *css)
 		{ "background",	0, 0, 0 },
 		{ "foreground",	1, 0, 0 },
 		{ "rt",		0, 0, 0 },
-		{ "top-app",	1, 0, 0 },
+		{ "top-app",	1, 0, 1 }
 	};
 	int i;
 
@@ -851,16 +860,11 @@ static void write_default_values(struct cgroup_subsys_state *css)
 				tgt.name, tgt.boost, tgt.boost_bias, tgt.prefer_idle);
 
 #ifdef CONFIG_ADAPTIVE_TUNE
-			if (tgt.boost) {
-				int ret = adaptive_boost_write(css, NULL, tgt.boost);
-				/* Skip other values if successful */
-				if (!ret)
-					continue;
-			}
+			adaptive_boost_write(css, NULL, tgt.boost);
 #else
 			boost_write(css, NULL, tgt.boost);
-#endif
 			boost_bias_write(css, NULL, tgt.boost_bias);
+#endif
 			prefer_idle_write(css, NULL, tgt.prefer_idle);
 		}
 	}
