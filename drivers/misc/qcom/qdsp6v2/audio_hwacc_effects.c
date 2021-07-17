@@ -107,6 +107,9 @@ static void audio_effects_init_pp(struct audio_client *ac)
 	case ASM_STREAM_POSTPROC_TOPO_ID_HPX_MASTER:
 	default:
 
+		/* Override topology */
+		ac->topology = ASM_STREAM_POSTPROC_TOPO_ID_HPX_MASTER;
+
 		ret = q6asm_set_softvolume_v2(ac, &softvol,
 					      SOFT_VOLUME_INSTANCE_1);
 		if (ret < 0)
@@ -133,6 +136,8 @@ static void audio_effects_deinit_pp(struct audio_client *ac)
 	switch (ac->topology) {
 	case ASM_STREAM_POSTPROC_TOPO_ID_HPX_MASTER:
 	default:
+		/* Override topology */
+		ac->topology = ASM_STREAM_POSTPROC_TOPO_ID_HPX_MASTER;
 		msm_dts_eagle_deinit_master_module(ac);
 		break;
 	}

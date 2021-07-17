@@ -39,6 +39,8 @@ enum {
 #endif
 
 #ifdef CONFIG_DTS_EAGLE
+bool msm_dts_is_valid_pid(int pid);
+int msm_dts_get_set_valid_pid(int pid);
 void msm_dts_ion_memmap(struct param_outband *po_);
 int msm_dts_eagle_enable_asm(struct audio_client *ac, u32 enable, int module);
 int msm_dts_eagle_enable_adm(int port_id, int copp_idx, u32 enable);
@@ -62,6 +64,14 @@ int msm_dts_eagle_pcm_new(struct snd_soc_pcm_runtime *runtime);
 void msm_dts_eagle_pcm_free(struct snd_pcm *pcm);
 int msm_dts_eagle_compat_ioctl(unsigned int cmd, unsigned long arg);
 #else
+static inline bool msm_dts_is_valid_pid(int pid)
+{
+	return false;
+}
+static inline int msm_dts_get_set_valid_pid(int pid)
+{
+	return 0;
+}
 static inline void msm_dts_ion_memmap(struct param_outband *po_)
 {
 	pr_debug("%s\n", __func__);

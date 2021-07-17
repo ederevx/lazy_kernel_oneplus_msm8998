@@ -4489,9 +4489,6 @@ struct afe_param_id_lpass_core_shared_clk_cfg {
 #define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX		0x10015002
 #define ADM_CMD_COPP_OPEN_TOPOLOGY_ID_AUDIOSPHERE	0x10028000
 
-/* Custom topology for LEGACY_PCM */
-#define CUSTOM_COPP_TOPOLOGY				ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX
-
 /* Memory map regions command payload used by the
  * #ASM_CMD_SHARED_MEM_MAP_REGIONS ,#ADM_CMD_SHARED_MEM_MAP_REGIONS
  * commands.
