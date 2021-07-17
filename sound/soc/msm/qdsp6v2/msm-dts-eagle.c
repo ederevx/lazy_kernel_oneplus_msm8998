@@ -134,6 +134,15 @@ enum { /* cache block description */
 	CBD_COUNT,
 };
 
+static const int _valid_pids[] = {
+	SLIMBUS_0_RX, 
+	INT_BT_SCO_RX, 
+	RT_PROXY_PORT_001_RX, 
+	HDMI_RX,
+	INT_FM_RX,
+	INT_FM_TX
+};
+
 static s32 _fx_logN(s32 x)
 {
 	s32 t, y = 0xa65af;
@@ -185,6 +194,7 @@ static u32 _depc_size;
 static s32 _c_bl[CB_COUNT][CBD_COUNT];
 static u32 _device_primary;
 static u32 _device_all;
+
 /* ION states */
 static struct ion_client *_ion_client;
 static struct ion_handle *_ion_handle;
@@ -300,6 +310,35 @@ static u32 _get_dev_mask_for_pid(int pid)
 	default:
 		return 0;
 	}
+}
+
+bool msm_dts_is_valid_pid(int pid)
+{
+	return !!_get_dev_mask_for_pid(pid);
+}
+
+int msm_dts_get_set_valid_pid(int pid)
+{
+	u32 mask = _get_dev_mask_for_pid(pid);
+
+	/* Do not force ADM again if primary is already set */
+	if (mask == _device_primary)
+		return -EADDRINUSE;
+
+	if (mask) {
+		int i;
+
+		_device_primary = mask;
+
+		/* Reset device all and reassign */
+		_device_all = 0;
+		for (i = 0; i < ARRAY_SIZE(_valid_pids); i++) {
+			if (_valid_pids[i] != pid)
+				_device_all |= _get_dev_mask_for_pid(_valid_pids[i]);
+		}
+	}
+
+	return !!mask;
 }
 
 static int _get_pid_from_dev(u32 device)

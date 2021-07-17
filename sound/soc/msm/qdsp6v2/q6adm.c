@@ -3043,6 +3043,27 @@ static int adm_open_v5_v6(int tmp_port, int port_idx, int copp_idx,
 	return ret;
 }
 
+static bool msm_dts_validate_adm_port(int port_id, int path, int topology)
+{
+	int ret;
+
+	if (path != ADM_PATH_PLAYBACK)
+		return false;
+
+	ret = msm_dts_get_set_valid_pid(port_id);
+	if (!ret)
+		return false;
+
+	/* Check if the topology can be overriden to reinit DTS */
+	if (ret < 0)
+		return ((topology == DOLBY_ADM_COPP_TOPOLOGY_ID) ||
+				(topology == DS2_ADM_COPP_TOPOLOGY_ID) ||
+				(topology == SRS_TRUMEDIA_TOPOLOGY_ID) ||
+				(topology == DEFAULT_COPP_TOPOLOGY));
+
+	return true;
+}
+
 int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	     int perf_mode, uint16_t bit_width, int app_type, int acdb_id,
 		u32 copp_token)
@@ -3051,15 +3072,16 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	int port_idx, flags;
 	int copp_idx = -1;
 	int tmp_port = q6audio_get_port_id(port_id);
+	bool force_dts_eagle = msm_dts_validate_adm_port(port_id, path, topology);
 
 	pr_debug("%s:port %#x path:%d rate:%d mode:%d perf_mode:%d,topo_id %d\n",
 		 __func__, port_id, path, rate, channel_mode, perf_mode,
 		 topology);
 
 	/* For DTS EAGLE only, force 24 bit */
-	if ((topology == ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX) &&
-		(perf_mode == LEGACY_PCM_MODE)) {
+	if (force_dts_eagle) {
 		bit_width = 24;
+		topology = ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX;
 		pr_debug("%s: Force open adm in 24-bit for DTS HPX topology 0x%x\n",
 			__func__, topology);
 	}
@@ -3181,8 +3203,11 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 			}
 		}
 
-		/* Have DTS be force allocated always as param outband for legacy PCM playback */
-		if ((path == ADM_PATH_PLAYBACK) && (perf_mode == LEGACY_PCM_MODE)) {
+		/* 
+		 * Have DTS be force allocated always as param outband for valid 
+		 * port ids' legacy PCM playback.
+		 */
+		if (force_dts_eagle) {
 			int res = 0;
 			atomic_set(&this_adm.mem_map_index, ADM_DTS_EAGLE);
 			msm_dts_ion_memmap(&this_adm.outband_memmap);

@@ -1285,6 +1285,9 @@ static int msm_compr_init_pp_params(struct snd_compr_stream *cstream,
 	case ASM_STREAM_POSTPROC_TOPO_ID_HPX_PLUS: /* HPX + SA+ topology */
 	default:
 
+		/* Override topology */
+		ac->topology = ASM_STREAM_POSTPROC_TOPO_ID_HPX_PLUS;
+
 		ret = q6asm_set_softvolume_v2(ac, &softvol,
 					      SOFT_VOLUME_INSTANCE_1);
 		if (ret < 0)
