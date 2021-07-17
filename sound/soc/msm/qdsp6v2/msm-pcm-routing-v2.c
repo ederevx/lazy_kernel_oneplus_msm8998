@@ -231,8 +231,10 @@ static void msm_pcm_routing_cfg_pp(int port_id, int copp_idx, int topology,
 		break;
 	case ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX:
 	default:
-		pr_debug("%s: DTS_EAGLE_COPP_TOPOLOGY_ID\n", __func__);
-		msm_dts_eagle_init_post(port_id, copp_idx);
+		if (msm_dts_is_valid_pid(port_id)) {
+			pr_debug("%s: DTS_EAGLE_COPP_TOPOLOGY_ID\n", __func__);
+			msm_dts_eagle_init_post(port_id, copp_idx);
+		}
 		break;
 	}
 }
@@ -264,8 +266,10 @@ static void msm_pcm_routing_deinit_pp(int port_id, int topology)
 		break;
 	case ADM_CMD_COPP_OPEN_TOPOLOGY_ID_DTS_HPX:
 	default:
-		pr_debug("%s: DTS_EAGLE_COPP_TOPOLOGY_ID\n", __func__);
-		msm_dts_eagle_deinit_post(port_id, topology);
+		if (msm_dts_is_valid_pid(port_id)) {
+			pr_debug("%s: DTS_EAGLE_COPP_TOPOLOGY_ID\n", __func__);
+			msm_dts_eagle_deinit_post(port_id, topology);
+		}
 		break;
 	}
 }
