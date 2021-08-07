@@ -8188,8 +8188,9 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	 * We do not migrate tasks that are:
 	 * 1) throttled_lb_pair, or
 	 * 2) cannot be migrated to this CPU due to cpus_allowed, or
-	 * 3) running (obviously), or
-	 * 4) are cache-hot on their current CPU.
+	 * 3) boosted and to be migrated to a low-power CPU from a non-overutilized perf CPU, or
+	 * 4) running (obviously), or
+	 * 5) are cache-hot on their current CPU.
 	 */
 	if (throttled_lb_pair(task_group(p), env->src_cpu, env->dst_cpu))
 		return 0;
@@ -8226,6 +8227,11 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 	/* Record that we found atleast one task that could run on dst_cpu */
 	env->flags &= ~LBF_ALL_PINNED;
+
+	if (task_is_boosted(p) && cpumask_test_cpu(env->dst_cpu, cpu_lp_mask) &&
+		!cpumask_test_cpu(env->src_cpu, cpu_lp_mask) && 
+		!cpu_overutilized(env->src_cpu))
+		return 0;
 
 	if (task_running(env->src_rq, p)) {
 		schedstat_inc(p, se.statistics.nr_failed_migrations_running);
