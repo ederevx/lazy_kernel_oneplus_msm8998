@@ -6040,8 +6040,8 @@ wake_affine_weight(struct sched_domain *sd, struct task_struct *p,
 	s64 this_eff_load, prev_eff_load;
 	unsigned long task_load;
 
-	this_eff_load = target_load(this_cpu, sd->wake_idx);
-	prev_eff_load = source_load(prev_cpu, sd->wake_idx);
+	this_eff_load = weighted_cpuload(this_cpu);
+	prev_eff_load = weighted_cpuload(prev_cpu);
 
 	if (sync) {
 		unsigned long current_load = task_h_load(current);
@@ -6078,10 +6078,10 @@ static int wake_affine(struct sched_domain *sd, struct task_struct *p,
 	if (sched_feat(WA_WEIGHT) && !affine)
 		affine = wake_affine_weight(sd, p, this_cpu, prev_cpu, sync);
 
-	schedstat_inc(p->se.statistics.nr_wakeups_affine_attempts);
+	schedstat_inc(p, se.statistics.nr_wakeups_affine_attempts);
 	if (affine) {
-		schedstat_inc(sd->ttwu_move_affine);
-		schedstat_inc(p->se.statistics.nr_wakeups_affine);
+		schedstat_inc(sd, ttwu_move_affine);
+		schedstat_inc(p, se.statistics.nr_wakeups_affine);
 	}
 
 	return affine;
