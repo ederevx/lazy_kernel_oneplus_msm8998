@@ -4,141 +4,116 @@
  */
 #include <linux/fb.h>
 #include <linux/input.h>
-#include <linux/kthread.h>
-#include <linux/pm_qos.h>
-#include <linux/slab.h>
 
 #include <linux/adaptive_tune.h>
 
-enum {
-	CURR,
-	NEW,
-	SUSPEND,
-	PENDING,
-	N_STATE
-};
+/* Extend duration max value */
+#define INTERNAL_MAX_PENDING 5
+#define MAX_PENDING (INTERNAL_MAX_PENDING + SHARED_MAX_PENDING)
 
 struct adaptune atx = {
-	.state = { ATOMIC_INIT(0) },
-	.update = ATOMIC_INIT(0)
+	.priv = {{ ATOMIC_INIT(0) }}
 };
 
-struct adaptune_priv {
-	struct adaptune *at;
-	struct task_struct *thread;
-	struct pm_qos_request req;
+struct adaptune_local {
+	struct {
+		struct timer_list timer;
+		unsigned long duration[MAX_PENDING];
+		unsigned int pending;
+		bool state;
+	} priv[N_ATS];
 	struct notifier_block fb_notif;
-	struct timer_list timer[N_ATS];
-	unsigned long duration[N_ATS];
-	int state[N_STATE];
+	bool suspended;
 };
 
-static bool adaptune_update_state(enum adaptune_states ats,
-		struct adaptune_priv *atp, int wanted_state, int *new_state)
+#define adaptune_update(ats, val)							\
+	do {													\
+		switch (ats) {										\
+			case CORE:										\
+				schedtune_adaptive_write(val);				\
+				schedutil_adaptive_limit_write(val);		\
+				break;										\
+			case INPUT:										\
+				break;										\
+		}													\
+		atomic_set(&atx.priv[ats].state, val);				\
+	} while (0)
+
+static inline void adaptune_timeout(struct adaptune_local *atl,
+		unsigned int ats)
 {
-	struct adaptune *at = atp->at;
-	bool ret;
+	unsigned int pending;
 
-	/* Force disable during suspend */
-	if (atp->state[SUSPEND])
-		*new_state = 0;
-	/* Update timer if we want the new state to be true */
-	else if (*new_state && !timer_pending(&atp->timer[ats]))
-		mod_timer(&atp->timer[ats], jiffies + atp->duration[ats]);
+	if (unlikely(READ_ONCE(atl->suspended)))
+		return;
 
-	/*
-	 * Only change the state value if the current atomic state
-	 * is opposite to what is wanted.
-	 */
-	ret = (wanted_state != atomic_read(&at->state[ats]));
-	if (*new_state == wanted_state && ret)
-		atomic_set(&at->state[ats], *new_state);
+	if (unlikely(!atl->priv[ats].state))
+		return;
 
-	return ret;
-}
-
-static void adaptune_core(struct adaptune_priv *atp, int wanted_state)
-{
-	int new_state = atomic_cmpxchg(&atp->at->update, 1, 0);
-
-	if (adaptune_update_state(CORE, atp, wanted_state, &new_state)) {
-		WRITE_ONCE(atp->state[NEW], new_state);
-		if (new_state != READ_ONCE(atp->state[CURR]))
-			wake_up_process(atp->thread);
+	pending = atl->priv[ats].pending + atomic_read(&atx.priv[ats].pending);
+	if (pending > 0) {
+		mod_timer(&atl->priv[ats].timer, jiffies +
+				atl->priv[ats].duration[pending - 1]);
+	} else {
+		adaptune_update(ats, 0);
+		atl->priv[ats].state = false;
 	}
+
+	atomic_set(&atx.priv[ats].pending, 0);
+	atl->priv[ats].pending = 0;
 }
 
-static void adaptune_input(struct adaptune_priv *atp, int wanted_state)
+static inline void adaptune_wake(struct adaptune_local *atl)
 {
-	int curr_pending = READ_ONCE(atp->state[PENDING]), new_pending = (wanted_state && 
-			timer_pending(&atp->timer[INPUT]));
+	unsigned int i;
 
-	if (new_pending != curr_pending)
-		WRITE_ONCE(atp->state[PENDING], new_pending);
-
-	if (!new_pending) {
-		int new_state = (wanted_state || curr_pending);
-		adaptune_update_state(INPUT, atp, wanted_state, &new_state);
-	}
-}
-
-static int adaptune_thread(void *data)
-{
-	static const struct sched_param sched_max_rt_prio = {
-		.sched_priority = MAX_RT_PRIO - 1
-	};
-	struct adaptune_priv *atp = data;
-
-	sched_setscheduler_nocheck(current, SCHED_FIFO, &sched_max_rt_prio);
-
-	while (1) {
-		int new_state;
-
-		while (atp->state[CURR] == (new_state = 
-				READ_ONCE(atp->state[NEW]))) {
-			set_current_state(TASK_IDLE);
-			schedule();
+	for (i = 0; i < N_ATS; i++) {
+		if (atl->priv[i].state) {
+			if (atl->priv[i].pending < INTERNAL_MAX_PENDING)
+				atl->priv[i].pending++;
+		} else {
+			atl->priv[i].state = true;
+			adaptune_update(i, 1);
+			mod_timer(&atl->priv[i].timer, jiffies +
+					atl->priv[i].duration[0]);
 		}
-
-		pm_qos_update_request(&atp->req, new_state ?
-				100 : PM_QOS_DEFAULT_VALUE);
-
-		pr_debug("adaptune: set stune = %d\n", new_state);
-		adaptive_schedtune_set(new_state);
-		WRITE_ONCE(atp->state[CURR], new_state);
 	}
+}
 
-	return 0;
+static inline void adaptune_suspend(struct adaptune_local *atl)
+{
+	unsigned int i;
+
+	for (i = 0; i < N_ATS; i++) {
+		if (atl->priv[i].state) {
+			del_timer(&atl->priv[i].timer);
+			adaptune_update(i, 0);
+			atl->priv[i].state = false;
+		}
+		atl->priv[i].pending = 0;
+		atomic_set(&atx.priv[i].pending, 0);
+	}
 }
 
 static void core_timeout(unsigned long data)
 {
-	adaptune_core((struct adaptune_priv *)data, 0);
+	adaptune_timeout((void *)data, CORE);
 }
 
 static void input_timeout(unsigned long data)
 {
-	adaptune_input((struct adaptune_priv *)data, 0);
-}
-
-static void adaptune_wake(struct adaptune_priv *atp)
-{
-	adaptune_input(atp, 1);
-	adaptune_core(atp, 1);
-}
-
-void adaptune_update(struct adaptune *at)
-{
-    struct adaptune_priv *atp = at->priv;
-
-	if (likely(atp))
-        adaptune_wake(atp);
+	adaptune_timeout((void *)data, INPUT);
 }
 
 static void adaptune_input_event(struct input_handle *handle,
 		unsigned int type, unsigned int code, int value)
 {
-	adaptune_wake(handle->handler->private);
+	struct adaptune_local *atl = handle->handler->private;
+
+	if (READ_ONCE(atl->suspended))
+		return;
+
+	adaptune_wake(atl);
 }
 
 static int adaptune_input_connect(struct input_handler *handler,
@@ -202,7 +177,7 @@ static struct input_handler adaptune_input_handler = {
 static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
 			  void *data)
 {
-	struct adaptune_priv *atp = container_of(nb, typeof(*atp), fb_notif);
+	struct adaptune_local *atl = container_of(nb, typeof(*atl), fb_notif);
 	int *blank = ((struct fb_event *)data)->data, state;
 
 	/* Notify the structures as soon as possible, do not allow if blank is NULL */
@@ -210,15 +185,13 @@ static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
 		return NOTIFY_OK;
 
 	state = (*blank == FB_BLANK_UNBLANK);
-	if (state == READ_ONCE(atp->state[SUSPEND])) {
-		WRITE_ONCE(atp->state[SUSPEND], !state);
+	if (state == atl->suspended) {
+		atl->suspended = !state;
 
-		if (!state) {
-			enum adaptune_states i;
-
-			for (i = 0; i < N_ATS; i++)
-				mod_timer_pending(&atp->timer[i], jiffies);
-		}
+		if (!state)
+			adaptune_suspend(atl);
+		else
+			adaptune_wake(atl);
 	}
 
 	return NOTIFY_OK;
@@ -226,61 +199,59 @@ static int fb_notifier_cb(struct notifier_block *nb, unsigned long action,
 
 static int __init adaptive_tune_init(void)
 {
-	struct adaptune_priv *atp;
+	struct adaptune_local *atl;
+	unsigned int i;
 	int ret = 0;
 
-	atp = kzalloc(sizeof(*atp), GFP_KERNEL);
-	if (!atp)
+	atl = kzalloc(sizeof(*atl), GFP_KERNEL);
+	if (!atl)
 		return -ENOMEM;
 
-	atp->at = &atx;
+	for (i = 0; i < N_ATS; i++) {
+		unsigned long duration;
+		unsigned int j;
+		void *timeout_func;
 
-	atp->duration[CORE] = msecs_to_jiffies(CONFIG_ADAPTUNE_CORE_DURATION);
-	atp->duration[INPUT] = msecs_to_jiffies(CONFIG_ADAPTUNE_INPUT_TIME_FRAME);
+		switch (i) {
+			case CORE:
+				duration = CONFIG_ADAPTUNE_CORE_DURATION;
+				timeout_func = core_timeout;
+				break;
+			case INPUT:
+				duration = CONFIG_ADAPTUNE_INPUT_TIME_FRAME;
+				timeout_func = input_timeout;
+				break;
+		}
 
-	setup_timer(&atp->timer[CORE], core_timeout, (unsigned long)atp);
-	setup_timer(&atp->timer[INPUT], input_timeout, (unsigned long)atp);
+		duration = msecs_to_jiffies(duration);
+		for (j = 0; j < MAX_PENDING; j++)
+			atl->priv[i].duration[j] = duration * (j + 1);
 
-	atp->req.type = PM_QOS_REQ_AFFINE_CORES;
-	atomic_set(&atp->req.cpus_affine, *cpumask_bits(cpu_perf_mask));
-	pm_qos_add_request(&atp->req, PM_QOS_CPU_DMA_LATENCY, PM_QOS_DEFAULT_VALUE);
+		setup_timer(&atl->priv[i].timer, timeout_func, (unsigned long)atl);
+	}
 
-	adaptune_input_handler.private = atp;
+	adaptune_input_handler.private = atl;
 	ret = input_register_handler(&adaptune_input_handler);
 	if (ret) {
 		pr_err("Failed to register input handler, err: %d\n", ret);
-		goto unregister_qos;
+		goto free_main;
 	}
 
-	atp->fb_notif.notifier_call = fb_notifier_cb;
-	atp->fb_notif.priority = INT_MAX;
-	ret = fb_register_client(&atp->fb_notif);
+	atl->fb_notif.notifier_call = fb_notifier_cb;
+	atl->fb_notif.priority = INT_MAX;
+	ret = fb_register_client(&atl->fb_notif);
 	if (ret) {
 		pr_err("Failed to register fb notifier, err: %d\n", ret);
 		goto unregister_input;
 	}
 
-	atp->thread = kthread_run(adaptune_thread, atp, "adaptune_d");
-	if (IS_ERR(atp->thread)) {
-		ret = PTR_ERR(atp->thread);
-		pr_err("Failed to start stune thread, err: %d\n", ret);
-		goto unregister_fb;
-	}
-
-	/* Register shared priv addr after successful init */
-	atx.priv = atp;
 	return 0;
-
-unregister_fb:
-	fb_unregister_client(&atp->fb_notif);
 
 unregister_input:
 	input_unregister_handler(&adaptune_input_handler);
 
-unregister_qos:
-	pm_qos_remove_request(&atp->req);
-
-	kfree(atp);
+free_main:
+	kfree(atl);
 	return ret;
 }
 late_initcall(adaptive_tune_init);
