@@ -192,6 +192,11 @@ static void scan_and_kill(void)
 	int i, nr_to_kill, nr_found = 0;
 	unsigned long pages_found;
 
+#ifdef CONFIG_ADAPTIVE_TUNE
+	/* Inform adaptune before finding victims */
+	adaptune_acquire_pending();
+#endif
+
 	/* Populate the victims array with tasks sorted by adj and then size */
 	pages_found = find_victims(&nr_found);
 	if (unlikely(!pages_found)) {
@@ -226,8 +231,8 @@ static void scan_and_kill(void)
 	write_unlock(&mm_free_lock);
 
 #ifdef CONFIG_ADAPTIVE_TUNE
-	/* Inform adaptune before killing victims */
-	adaptune_update(&atx);
+	/* Inform adaptune again before killing victims */
+	adaptune_acquire_pending();
 #endif
 
 	/* Kill the victims */
