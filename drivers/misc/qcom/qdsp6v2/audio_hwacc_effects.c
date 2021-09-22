@@ -59,13 +59,21 @@ static void msm_custom_audio_effects(struct q6audio_effects *effects)
 		{ AUDPROC_MODULE_ID_BASS_BOOST, AUDPROC_PARAM_ID_BASS_BOOST_ENABLE,
 			BASS_BOOST_ENABLE_PARAM_SZ, &msm_effects->bass_boost.enable_flag, 1 },
 		{ AUDPROC_MODULE_ID_BASS_BOOST, AUDPROC_PARAM_ID_BASS_BOOST_STRENGTH,
-			BASS_BOOST_STRENGTH_PARAM_SZ, &msm_effects->bass_boost.strength, 600 },
+			BASS_BOOST_STRENGTH_PARAM_SZ, &msm_effects->bass_boost.strength, 750 },
 
 		/* Virtualizer */
 		{ AUDPROC_MODULE_ID_VIRTUALIZER, AUDPROC_PARAM_ID_VIRTUALIZER_ENABLE,
 			VIRTUALIZER_ENABLE_PARAM_SZ, &msm_effects->virtualizer.enable_flag, 1 },
 		{ AUDPROC_MODULE_ID_VIRTUALIZER, AUDPROC_PARAM_ID_VIRTUALIZER_STRENGTH,
-			VIRTUALIZER_STRENGTH_PARAM_SZ, &msm_effects->virtualizer.strength, 1000 },
+			VIRTUALIZER_STRENGTH_PARAM_SZ, &msm_effects->virtualizer.strength, 200 },
+		
+		/* Experimental */
+		{ AUDPROC_MODULE_ID_PBE, AUDPROC_PARAM_ID_PBE_ENABLE,
+			PBE_ENABLE_PARAM_SZ, &msm_effects->pbe.enable_flag, 1 },
+		{ AUDPROC_MODULE_ID_BASS_BOOST, AUDPROC_PARAM_ID_BASS_BOOST_MODE,
+			BASS_BOOST_MODE_PARAM_SZ, &msm_effects->bass_boost.mode, 1 },
+		{ AUDPROC_MODULE_ID_VIRTUALIZER, AUDPROC_PARAM_ID_VIRTUALIZER_OUT_TYPE,
+			VIRTUALIZER_OUT_TYPE_PARAM_SZ, &msm_effects->virtualizer.out_type, 3 },
 		{}
 	};
 
