@@ -20,6 +20,18 @@
 #include "sched.h"
 #include "tune.h"
 
+#ifdef CONFIG_ADAPTIVE_TUNE
+#include <linux/adaptive_tune.h>
+
+static bool schedutil_adaptive_limit __cacheline_aligned_in_smp = true;
+
+#define schedutil_adaptive_limit_read() READ_ONCE(schedutil_adaptive_limit)
+void schedutil_adaptive_limit_write(bool state)
+{
+	WRITE_ONCE(schedutil_adaptive_limit, state);
+}
+#endif
+
 unsigned long boosted_cpu_util(int cpu);
 
 /* Stub out fast switch routines present on mainline to reduce the backport
@@ -28,14 +40,20 @@ unsigned long boosted_cpu_util(int cpu);
 #define cpufreq_enable_fast_switch(x)
 #define cpufreq_disable_fast_switch(x)
 
+/* Hardcoded rate limit values */
+#define UP_RATE_DELAY_NS (500 * NSEC_PER_USEC)
+#define DOWN_RATE_DELAY_NS (20000 * NSEC_PER_USEC)
+#define MIN_RATE_LIMIT_NS (UP_RATE_DELAY_NS < DOWN_RATE_DELAY_NS ? \
+	UP_RATE_DELAY_NS : DOWN_RATE_DELAY_NS)
+#ifdef CONFIG_ADAPTIVE_TUNE
+#define INACTIVE_RATE_LIMIT_NS (100000 * NSEC_PER_USEC)
+#endif
+
 struct sugov_policy {
 	struct cpufreq_policy *policy;
 
 	raw_spinlock_t update_lock;  /* For shared policies */
 	u64 last_freq_update_time;
-	s64 min_rate_limit_ns;
-	s64 up_rate_delay_ns;
-	s64 down_rate_delay_ns;
 	unsigned int next_freq;
 	unsigned int cached_raw_freq;
 
@@ -48,6 +66,11 @@ struct sugov_policy {
 	bool work_in_progress;
 
 	bool need_freq_update;
+
+#ifdef CONFIG_ADAPTIVE_TUNE
+	bool cached_adaptive_limit;
+	bool limit_changed;
+#endif
 };
 
 struct sugov_cpu {
@@ -74,6 +97,9 @@ static DEFINE_PER_CPU(struct sugov_cpu, sugov_cpu);
 
 static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 {
+#ifdef CONFIG_ADAPTIVE_TUNE
+	bool cached_adaptive_limit = sg_policy->cached_adaptive_limit;
+#endif
 	s64 delta_ns;
 
 	/*
@@ -99,10 +125,24 @@ static bool sugov_should_update_freq(struct sugov_policy *sg_policy, u64 time)
 	if (unlikely(sg_policy->need_freq_update))
 		return true;
 
+#ifdef CONFIG_ADAPTIVE_TUNE
+	if (cached_adaptive_limit != schedutil_adaptive_limit_read()) {
+		sg_policy->cached_adaptive_limit = !cached_adaptive_limit;
+		sg_policy->limit_changed = true;
+		return true;
+	}
+#endif
+
 	delta_ns = time - sg_policy->last_freq_update_time;
 
+#ifdef CONFIG_ADAPTIVE_TUNE
+	/* Apply longer rate limits if inactive */
+	if (!cached_adaptive_limit)
+		return delta_ns >= INACTIVE_RATE_LIMIT_NS;
+#endif
+
 	/* No need to recalculate next freq for min_rate_limit_us at least */
-	return delta_ns >= sg_policy->min_rate_limit_ns;
+	return delta_ns >= MIN_RATE_LIMIT_NS;
 }
 
 static bool sugov_up_down_rate_limit(struct sugov_policy *sg_policy, u64 time,
@@ -110,14 +150,25 @@ static bool sugov_up_down_rate_limit(struct sugov_policy *sg_policy, u64 time,
 {
 	s64 delta_ns;
 
+#ifdef CONFIG_ADAPTIVE_TUNE
+	if (sg_policy->limit_changed) {
+		sg_policy->limit_changed = false;
+		return false;
+	}
+
+	/* Inactive rate limit is longer than min rate */
+	if (!sg_policy->cached_adaptive_limit)
+		return false;
+#endif
+
 	delta_ns = time - sg_policy->last_freq_update_time;
 
 	if (next_freq > sg_policy->next_freq &&
-	    delta_ns < sg_policy->up_rate_delay_ns)
+	    delta_ns < UP_RATE_DELAY_NS)
 			return true;
 
 	if (next_freq < sg_policy->next_freq &&
-	    delta_ns < sg_policy->down_rate_delay_ns)
+	    delta_ns < DOWN_RATE_DELAY_NS)
 			return true;
 
 	return false;
@@ -553,9 +604,6 @@ static int sugov_start(struct cpufreq_policy *policy)
 	struct sugov_policy *sg_policy = policy->governor_data;
 	unsigned int cpu;
 
-	sg_policy->up_rate_delay_ns = 500000ULL;
-	sg_policy->down_rate_delay_ns = 20000000ULL;
-	sg_policy->min_rate_limit_ns = 500000ULL;
 	sg_policy->last_freq_update_time = 0;
 	sg_policy->next_freq = 0;
 	sg_policy->work_in_progress = false;

@@ -423,7 +423,7 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq,
 #ifdef CONFIG_ADAPTIVE_TUNE
 	/* Directly update adaptune if GPU is running at a higher frequency than min */
 	if (*freq > devfreq->min_freq && devfreq->previous_freq > devfreq->min_freq)
-		adaptune_update(&atx);
+		adaptune_acquire_pending();
 #endif
 
 	return 0;

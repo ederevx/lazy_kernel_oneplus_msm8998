@@ -8213,7 +8213,8 @@ int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	/* Record that we found atleast one task that could run on dst_cpu */
 	env->flags &= ~LBF_ALL_PINNED;
 
-	if (task_is_boosted(p) && cpumask_test_cpu(env->dst_cpu, cpu_lp_mask) &&
+	if (schedtune_task_boost(p) > 0 && 
+		cpumask_test_cpu(env->dst_cpu, cpu_lp_mask) &&
 		!cpumask_test_cpu(env->src_cpu, cpu_lp_mask) && 
 		!cpu_overutilized(env->src_cpu))
 		return 0;
