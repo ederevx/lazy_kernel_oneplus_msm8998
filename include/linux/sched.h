@@ -1595,6 +1595,9 @@ struct task_struct {
 #ifdef CONFIG_CGROUP_SCHED
 	struct task_group *sched_task_group;
 #endif
+#ifdef CONFIG_SCHED_TUNE
+	bool schedtune_enqueued;
+#endif
 	struct sched_dl_entity dl;
 
 #ifdef CONFIG_PREEMPT_NOTIFIERS
