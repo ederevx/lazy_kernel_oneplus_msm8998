@@ -370,6 +370,10 @@ void schedtune_enqueue_task(struct task_struct *p, int cpu)
 	if (p->flags & PF_EXITING)
 		return;
 
+	/* Only enqueue boosted tasks */
+	if (schedtune_boost_bias(p) != 2)
+		return;
+
 	if (!schedtune_set_enqueued(p, true))
 		return;
 

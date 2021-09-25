@@ -1462,9 +1462,7 @@ enqueue_task_rt(struct rq *rq, struct task_struct *p, int flags)
 
 	*per_cpu_ptr(&incoming_rt_task, cpu_of(rq)) = false;
 
-	/* Only enqueue boosted tasks */
-	if (schedtune_boost_bias(p) > 1)
-		schedtune_enqueue_task(p, cpu_of(rq));
+	schedtune_enqueue_task(p, cpu_of(rq));
 
 	if (!schedtune_task_boost(p))
 		return;
