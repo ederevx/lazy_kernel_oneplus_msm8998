@@ -344,7 +344,7 @@ schedtune_set_enqueued(struct task_struct *p, bool state)
 	if (state == p->schedtune_enqueued)
 		return false;
 
-	p->schedtune_enqueued = state;
+	smp_store_mb(p->schedtune_enqueued, state);
 	return true;
 }
 
