@@ -597,6 +597,10 @@ int schedtune_task_boost(struct task_struct *p)
 	if (unlikely(!schedtune_initialized))
 		return 0;
 
+	/* Only access boost value if tracked */
+	if (!READ_ONCE(p->schedtune_enqueued))
+		return 0;
+
 #ifdef CONFIG_ADAPTIVE_TUNE
 	/* Disable if inactive */
 	if (!schedtune_adaptive_read())
